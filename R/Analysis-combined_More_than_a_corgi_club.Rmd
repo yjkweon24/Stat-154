@@ -1,0 +1,3620 @@
+---
+title: "Final project (Jin Kweon and Jiyoon Clover Jeong)"
+author: "Jin Kweon and Clover Jeong"
+date: "11/22/2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rpart) #decision tree
+library(rpart.plot) # plotting decision tree
+library(mlr, warn.conflicts = T) #missing values imputation
+library(missForest, warn.conflicts = T) #missing values imputation
+library(mi, warn.conflicts = T) #missing values imputation
+library(mice, warn.conflicts = T) #missing values imputation
+library(VIM) #finding patterns of missing values
+library(Hmisc) #missing values imputation
+library(lattice)
+library(arules) #discretize
+library(lme4) #dummfiy
+library(tree)
+library(caret)
+library(ROCR, warn.conflicts = T) # ROC curve
+library(pROC, warn.conflicts = T) # Get the optimal threshold
+library(randomForest)
+library(dplyr)
+library(C50) #boosted tree
+library(bst) #boosted tree
+library(plyr) #boosted tree
+library(gbm) #boosted tree
+library(ggplot2)
+options(scipen=999) #get rid of scientific notation 
+```
+
+
+
+
+
+
+
+
+
+#Preprocessing and Exploratory Data Analysis 
+
+###a) Missing values
+```{r EDA}
+train <- read.table("../data/rawdata/adult.data.txt", sep = ",", na.strings = "?",
+                    strip.white = T)
+test <- read.table("../data/rawdata/adult.test.txt", sep = ",", na.strings = "?",
+                   strip.white = T)
+
+dim(train)
+dim(test)
+
+colnames(train) <- c("age", "workclass", "fnlwgt", "education", "education-num",
+                     "marital-status", "occupation", "relationship", "race", "sex",
+                     "capital-gain", "capital-loss", "hours-per-week", "native-country", "income")
+
+colnames(test) <- c("age", "workclass", "fnlwgt", "education", "education-num",
+                     "marital-status", "occupation", "relationship", "race", "sex",
+                     "capital-gain", "capital-loss", "hours-per-week", "native-country", "income")
+
+
+
+#Find missing values and NAs for training set.
+for(i in 1:ncol(train)){
+  cat("<names of NA rows in", colnames(train)[i], "variable>", "\n")
+  cat(rownames(train)[is.na(train[, i])], "\n")
+  cat("Number of NA values:  ", length(rownames(train)[is.na(train[, i])]), "\n")
+  print("======================================")
+  print("======================================")
+  
+  cat("<names of rows contain missing values in", colnames(train)[i], "variable>", "\n")
+  cat(rownames(train[which(train[, i] == ""), ]), "\n")
+  cat("Number of Missing values :  ", length(rownames(train[which(train[, i] == ""), ])), "\n")
+  print("======================================")
+  print("======================================")
+  
+  cat("<names of rows contain ? values in", colnames(train)[i], "variable>", "\n")
+  cat(rownames(train[which(train[, i] == " ?"), ]), "\n")
+  cat("Number of ? values :  ", length(rownames(train[which(train[, i] == " ?"), ])), "\n")
+  print("======================================")
+  print("======================================")
+}
+
+
+
+#Find missing values and NAs for testing set.
+for(i in 1:ncol(test)){
+  cat("<names of NA rows in", colnames(test)[i], "variable>", "\n")
+  cat(rownames(test)[is.na(test[, i])], "\n")
+  cat("Number of NA values:  ", length(rownames(test)[is.na(test[, i])]), "\n")
+  print("======================================")
+  print("======================================")
+  
+  cat("<names of rows contain missing values in", colnames(test)[i], "variable>", "\n")
+  cat(rownames(test[which(test[, i] == ""), ]), "\n")
+  cat("Number of Missing values :  ", length(rownames(test[which(test[, i] == ""), ])), "\n")
+  print("======================================")
+  print("======================================")
+  
+  cat("<names of rows contain ? values in", colnames(test)[i], "variable>", "\n")
+  cat(rownames(test[which(test[, i] == " ?"), ]), "\n")
+  cat("Number of ? values :  ", length(rownames(test[which(test[, i] == " ?"), ])), "\n")
+  print("======================================")
+  print("======================================")
+}
+
+
+
+#Get percentage of missing values
+apply(train, 2, function(x) sum(is.na(x)) / length(x)) * 100
+apply(test, 2, function(x) sum(is.na(x)) / length(x)) * 100
+
+
+
+#MICE package to see the pattern 
+md.pattern(train)
+plot <- aggr(train, col = c('blue', 'yellow'),
+                    numbers = TRUE, sortVars = TRUE,
+                    labels = names(train), cex.axis = .7,
+                    gap = 2, ylab = c("Missing data", "Pattern"))
+
+md.pattern(test)
+plot <- aggr(test, col = c('blue', 'yellow'),
+                    numbers = TRUE, sortVars = TRUE,
+                    labels = names(test), cex.axis = .7,
+                    gap = 2, ylab = c("Missing data", "Pattern"))
+
+
+
+# Hmisc package to impute missing values
+# ww <- aregImpute(~ age + workclass + fnlwgt + education + `education-num` + `marital-status` +
+#                    occupation + relationship + race + sex + `capital-gain` + `capital-loss` +
+#                    `hours-per-week` + income,
+#                  data = train, n.impute = 5, group = "income")
+
+
+
+#mlr package to impute missing values
+# newworkclass <- impute(train[,2], classes = list(factor = imputeMode(), integer = imputeMean()), dummy.classes = c("integer","factor"), dummy.type = "numeric")
+# 
+# newoccupation <- impute(train[,7], classes = list(factor = imputeMode(), integer = imputeMean()), dummy.classes = c("integer","factor"), dummy.type = "numeric")
+# 
+# newcountry <- impute(train[,14], classes = list(factor = imputeMode(), integer = imputeMean()), dummy.classes = c("integer","factor"), dummy.type = "numeric")
+
+
+
+#missForest package to impute missing values
+# foresting <- missForest(train, maxiter = 5, ntree = 100)
+# foresting$OOBerror
+# newtrain <- foresting$ximp
+# write.csv(newtrain, file = "../data/cleandata/newtrain.csv", col.names = T, row.names = F)
+newtrain <- read.csv("../data/cleandata/newtrain.csv", header = T)
+dim(newtrain)
+
+
+
+# foresting2 <- missForest(test, maxiter = 5, ntree = 100)
+# foresting2$OOBerror
+# newtest <- foresting2$ximp
+# write.csv(newtest, file = "../data/cleandata/newtest.csv", col.names = T, row.names = F)
+newtest <- read.csv("../data/cleandata/newtest.csv", header = T)
+dim(newtest)
+
+
+
+#Check whether the data is messed up while imputing missing values
+#They should never show 0, as we are supposed to see only missing value has been changed...
+#Compare NA with new number in new data set should show NA, not 0.
+t <- matrix(0, 1, ncol(train))
+for(i in 1:20){
+  a <- sample.int(nrow(newtrain), 1)
+  t <- rbind(t, (newtrain[a, ] == train[a, ]))
+}
+t <- t[-1, ]
+t
+
+t2 <- matrix(0, 1, ncol(test))
+for(i in 1:20){
+  a <- sample.int(nrow(newtest), 1)
+  t2 <- rbind(t2, (newtest[a, ] == test[a, ]))
+}
+t2 <- t2[-1, ]
+t2
+```
+
+$\\$
+
+$\\$
+
+###b) 2 - 5 EDAs
+```{r}
+#See structure and summaries before removing outliers
+str(newtest)
+summary(newtest)
+
+str(newtrain)
+summary(newtrain)
+
+
+
+#Deal with outliers for training sets
+continuouscol <- c(1, 3, 5, 11, 12, 13) #subset continous variables
+
+par(mfrow = c(2, 3))
+for(i in continuouscol){
+  boxplot(newtrain[, i], main = paste("boxplot for", colnames(newtrain[i])),
+          xlab = colnames(newtrain[i]))
+}
+
+for(i in continuouscol){
+  den_acc <- density(newtrain[, i], adjust = 1)
+  plot(den_acc, main = paste("density plot for", colnames(newtrain[i])))
+  polygon(den_acc, col = "red", border = "blue")
+}
+
+outlierstrain <- list()
+for(i in continuouscol){
+  outliers <- boxplot.stats(newtrain[, i])$out
+  numbers <- length(outliers)
+  outlierstrain[[i]] <- list(outliers, numbers)
+}
+head(outlierstrain)
+
+fnlwgttrainout <- tail(order(rank(newtrain[, 3])), 15)
+fnlout <- c()
+for(i in 1:length(fnlwgttrainout)){
+  fnlout[i] <- newtrain[fnlwgttrainout[i], 3]
+}
+
+#head(order(rank(newtrain[,5])))
+table(newtrain[, 11])
+gainout <- tail(order(rank(newtrain[, 11])), 159)
+
+
+
+#Outliers removing for training sets.
+dim(newtrain)
+newtrain <- newtrain[-gainout, ]
+dim(newtrain)
+
+
+
+#Deal with outliers for testing sets
+for(i in continuouscol){
+  boxplot(newtest[, i], main = paste("boxplot for", colnames(newtest[i])),
+          xlab = colnames(newtest[i]))
+}
+
+for(i in continuouscol){
+  den_acc <- density(newtest[, i], adjust = 1)
+  plot(den_acc, main = paste("density plot for", colnames(newtest[i])))
+  polygon(den_acc, col = "red", border = "blue")
+}
+
+outlierstest <- list()
+for(i in continuouscol){
+  outliers <- boxplot.stats(newtest[, i])$out
+  numbers <- length(outliers)
+  outlierstest[[i]] <- list(outliers, numbers)
+}
+head(outlierstest)
+
+table(newtest[, 11])
+gainout <- tail(order(rank(newtest[, 11])), 85)
+
+
+
+#Outliers removing for training sets.
+dim(newtest)
+newtest <- newtest[-gainout, ]
+dim(newtest)
+
+
+
+#Plots after removing outliers training
+for(i in continuouscol){
+  boxplot(newtrain[, i], main = paste("boxplot for", colnames(newtrain[i]), "-outliers removed"),
+          xlab = colnames(newtrain[i]))
+}
+
+for(i in continuouscol){
+  den_acc <- density(newtrain[, i], adjust = 1)
+  plot(den_acc, main = paste("density plot for", colnames(newtrain[i]), "-outliers removed"))
+  polygon(den_acc, col = "red", border = "blue")
+}
+
+
+
+#Plots after removing outliers testing
+for(i in continuouscol){
+  boxplot(newtest[, i], main = paste("boxplot for", colnames(newtest[i]), "-outliers removed"),
+          xlab = colnames(newtest[i]))
+}
+
+for(i in continuouscol){
+  den_acc <- density(newtest[, i], adjust = 1)
+  plot(den_acc, main = paste("density plot for", colnames(newtest[i]), "-outliers removed"))
+  polygon(den_acc, col = "red", border = "blue")
+}
+```
+
+$\\$
+
+$\\$
+
+###Check-ups before discretizing and dummifying
+```{r}
+detach("package:plyr", unload = TRUE) #because plyr and dplyr existed together conflicting...
+
+#Check whether categorical variables can be discretized....
+plot(newtrain$workclass)
+table(newtrain$workclass)
+newtrain %>% group_by(workclass) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+plot(newtest$workclass)
+table(newtest$workclass)
+newtest %>% group_by(workclass) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+
+
+plot(newtrain$education)
+table(newtrain$education)
+newtrain %>% group_by(education) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+plot(newtest$education)
+table(newtest$education)
+newtest %>% group_by(education) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+
+
+plot(newtrain$marital.status)
+table(newtrain$marital.status)
+newtrain %>% group_by(marital.status) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+plot(newtest$marital.status)
+table(newtest$marital.status)
+newtest %>% group_by(marital.status) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+
+
+plot(newtrain$occupation)
+table(newtrain$occupation)
+newtrain %>% group_by(occupation) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+plot(newtest$occupation)
+table(newtest$occupation)
+newtest %>% group_by(occupation) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+
+
+plot(newtrain$relationship)
+table(newtrain$relationship)
+newtrain %>% group_by(relationship) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+plot(newtest$relationship)
+table(newtest$relationship)
+newtest %>% group_by(relationship) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+
+
+plot(newtrain$race)
+table(newtrain$race)
+newtrain %>% group_by(race) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+plot(newtest$race)
+table(newtest$race)
+newtest %>% group_by(race) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+
+
+plot(newtrain$sex)
+table(newtrain$sex)
+newtrain %>% group_by(sex) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+plot(newtest$sex)
+table(newtest$sex)
+newtest %>% group_by(sex) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+
+
+plot(newtrain$native.country)
+table(newtrain$native.country)
+newtrain %>% group_by(native.country) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+plot(newtest$native.country)
+table(newtest$native.country)
+newtest %>% group_by(native.country) %>%  summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+
+
+#Check collinearity issues
+newtrain %>% group_by(education) %>% summarise (n = n()) %>% mutate(freq = n / sum(n))
+newtrain %>% group_by(education.num) %>% summarise (n = n()) %>% mutate(freq = n / sum(n))
+
+newtrain <- newtrain[, -4]
+newtest <- newtest[, -4]
+```
+
+$\\$
+
+$\\$
+
+###c) 6 - 8 EDAs
+```{r}
+#Find correlations of the data - for collinearity issue checks
+cor(newtest[, c(1, 3, 4, 10, 12)])
+cor(newtrain[, c(1, 3, 4, 10, 12)])
+
+
+
+#remove fnlwght variable.
+newtrain <- newtrain[, -3]
+newtest <- newtest[, -3]
+
+
+
+#See structure and summaries after removing outliers
+str(newtest)
+summary(newtest)
+
+str(newtrain)
+summary(newtrain)
+
+
+
+#Analyzing/checking before discretizing
+# table(newtrain[,14])
+# table(newtest[,14])
+# 
+# plot(newtrain$education)
+# plot(newtrain$occupation)
+# plot(newtrain$native.country)
+# 
+# plot(newtest$education)
+# plot(newtest$occupation)
+# plot(newtest$native.country)
+
+
+
+#Discretize training set
+# discretetrainage <- discretize(newtrain$age, method = "interval", categories = 10)
+# discretetrainfnlwgt <- discretize(newtrain$fnlwgt, method = "interval", categories = 10)
+# discretetrainedunum <- discretize(newtrain$education.num, method = "interval", categories = 10)
+# discretetraingain <- discretize(newtrain$capital.gain, method = "interval", categories = 10)
+# discretetrainloss <- discretize(newtrain$capital.loss, method = "interval", categories = 10)
+# discretetrainhours <- discretize(newtrain$hours.per.week, method = "interval", categories = 10)
+
+
+
+#Binning
+countrydis <- function(vector){
+  len <- length(vector)
+  for(i in 1:len){
+      if(vector[i] == "United-States"){
+        vector[i] <- vector[i]
+      }else if(vector[i] == "Mexico"){
+        vector[i] <- vector[i]
+      }else if(vector[i] == "Philippines"){
+        vector[i] <- vector[i]
+      }else{
+        vector[i] <- "other_countries"
+      }
+  }
+  return(vector)
+}
+
+workdis <- function(vector){
+  len <- length(vector)
+  for(i in 1:len){
+    if(vector[i] == "Federal-gov"){
+      vector[i] <- vector[i]
+    }else if(vector[i] == "Local-gov"){
+      vector[i] <- vector[i]
+    }else if(vector[i] == "Private"){
+      vector[i] <- vector[i]
+    }else if(vector[i] == "Self-emp-inc"){
+      vector[i] <- vector[i]
+    }else if(vector[i] == "Self-emp-not-inc"){
+      vector[i] <- vector[i]
+    }else if(vector[i] == "State-gov"){
+      vector[i] <- vector[i]
+    }else{
+      vector[i] <- "No-gain"
+    }
+  }
+  return(vector)
+}
+
+#discretetraincountry <- as.factor(countrydis(as.character(newtrain$native.country)))
+
+
+
+#Discretize testing set
+# discretetestage <- discretize(newtest$age, method = "interval", categories = 10)
+# discretetestfnlwgt <- discretize(newtest$fnlwgt, method = "interval", categories = 10)
+# discretetestedunum <- discretize(newtest$education.num, method = "interval", categories = 10)
+# discretetestgain <- discretize(newtest$capital.gain, method = "interval", categories = 10)
+# discretetestloss <- discretize(newtest$capital.loss, method = "interval", categories = 10)
+# discretetesthours <- discretize(newtest$hours.per.week, method = "interval", categories = 10)
+# discretetestcountry <- as.factor(countrydis(as.character(newtest$native.country)))
+#Combine training and testing to make the same intervals for discretizing
+
+
+
+newtrain$type <- "train"
+newtest$type <- "test"
+combined <- rbind(newtrain, newtest)
+
+
+
+# discreteage <- discretize(combined$age, method = "interval", categories = 10)
+# discretefnlwgt <- discretize(combined$fnlwgt, method = "interval", categories = 10)
+# discreteedunum <- discretize(combined$education.num, method = "interval", categories = 10)
+# discretegain <- discretize(combined$capital.gain, method = "interval", categories = 7) #not enough data
+# discreteloss <- discretize(combined$capital.loss, method = "interval", categories = 7) #not enough data
+# discretehours <- discretize(combined$hours.per.week, method = "interval", categories = 10)
+discretecountry <- as.factor(countrydis(as.character(combined$native.country)))
+discreteworkclass <- as.factor(workdis(as.character(combined$workclass)))
+
+
+
+# combined$age <- discreteage
+# combined$fnlwgt <- discretefnlwgt
+# combined$education.num <- discreteedunum
+# combined$capital.gain <- discretegain
+# combined$capital.loss <- discreteloss
+# combined$hours.per.week <- discretehours
+combined$native.country <- discretecountry
+combined$workclass <- discreteworkclass
+
+
+
+dim(combined)
+newtrain2 <- combined[1:sum(combined$type == "train"), -14]
+newtest2 <- combined[(sum(combined$type == "train") + 1):nrow(combined), -14]
+dim(newtrain2)
+dim(newtest2)
+
+
+
+#plots
+par(mfrow = c(2, 2)) #set how many plots on the palete.
+
+for(i in 1:12){
+  plot(newtrain2[, i], newtrain2[, 13])
+}
+
+for(i in 1:12){
+  plot(newtest2[, i], newtest2[, 13])
+}
+
+
+
+#Assignining discretized variables
+# newtrain2 <- newtrain
+# newtest2 <- newtest
+# dim(newtrain2)
+# dim(newtest2)
+# 
+# newtrain2$age <- discretetrainage
+# newtrain2$fnlwgt <- discretetrainfnlwgt
+# newtrain2$education.num <- discretetrainedunum
+# newtrain2$capital.gain <- discretetraingain
+# newtrain2$capital.loss <- discretetrainloss
+# newtrain2$hours.per.week <- discretetrainhours
+# newtrain2$native.country <- discretetraincountry
+# 
+# newtest2$age <- discretetestage
+# newtest2$fnlwgt <- discretetestfnlwgt
+# newtest2$education.num <- discretetestedunum
+# newtest2$capital.gain <- discretetestgain
+# newtest2$capital.loss <- discretetestloss
+# newtest2$hours.per.week <- discretetesthours
+# newtest2$native.country <- discretetestcountry
+
+
+
+#Dummify training set
+dumtrainwork <- dummy(newtrain2$workclass)
+dumtrainmarry <- dummy(newtrain2$marital.status)
+dumtrainoccu <- dummy(newtrain2$occupation)
+dumtrainrelation <- dummy(newtrain2$relationship)
+dumtrainrace <- dummy(newtrain2$race)
+dumtrainsex <- dummy(newtrain2$sex)
+dumtraincountry <- dummy(newtrain2$native.country)
+
+
+
+#Dummify testing set
+dumtestwork <- dummy(newtest2$workclass)
+dumtestmarry <- dummy(newtest2$marital.status)
+dumtestoccu <- dummy(newtest2$occupation)
+dumtestrelation <- dummy(newtest2$relationship)
+dumtestrace <- dummy(newtest2$race)
+dumtestsex <- dummy(newtest2$sex)
+dumtestcountry <- dummy(newtest2$native.country)
+
+
+
+#Take out columns
+newtrain2 <- newtrain2[, -c(2, 4, 5, 6, 7, 8, 12)]
+newtest2 <- newtest2[, -c(2, 4, 5, 6, 7, 8, 12)]
+
+
+
+#Assigning dummified variables
+newtrain2 <- cbind(newtrain2, dumtrainwork, dumtrainmarry, dumtrainoccu,
+                   dumtrainrelation, dumtrainrace, dumtrainsex, dumtraincountry)
+newtrain2[, 45] <- newtrain2$income
+newtrain2 <- newtrain2[, -6]
+names(newtrain2)[44]<- "income"
+dim(newtrain2)
+
+newtest2 <- cbind(newtest2, dumtestwork, dumtestmarry, dumtestoccu,
+                   dumtestrelation, dumtestrace, dumtestsex, dumtestcountry)
+newtest2[, 45] <- newtest2$income
+newtest2 <- newtest2[, -6]
+names(newtest2)[44]<- "income"
+dim(newtest2)
+
+
+
+#fixing...
+newtrain2$income <- droplevels(newtrain2$income, c("<=50K.", ">50K."))
+newtest2$income <- droplevels(newtest2$income, c("<=50K", ">50K"))
+
+newtest2$income <- as.character(newtest2$income)
+newtest2$income <- substr(newtest2$income, 1, nchar(newtest2$income) - 1)
+newtest2$income <- as.factor(newtest2$income)
+
+
+
+dim(newtrain2)
+dim(newtest2)
+str(newtrain2)
+str(newtest2)
+```
+
+```{r, echo = F, eval = F}
+write.csv(newtest2, file = "../data/cleandata/newtest2.csv", col.names = T, row.names = F)
+write.csv(newtrain2, file = "../data/cleandata/newtrain2.csv", col.names = T, row.names = F)
+```
+
+```{r, echo = F}
+newtrain2 <- read.csv("../data/cleandata/newtrain2.csv", header = T)
+newtest2 <- read.csv("../data/cleandata/newtest2.csv", header = T)
+str(newtrain2)
+str(newtest2)
+```
+
+$\\$
+
+$\\$
+
+
+
+
+
+#Classification tree Using R part function - tuning method 1
+
+threshold: https://stackoverflow.com/questions/46042966/set-threshold-for-the-probability-result-from-decision-tree
+```{r}
+set.seed(100)
+
+
+
+#Create a baseline Classification tree using gini index criterion using random cp
+tree <- rpart(income ~., data = newtrain2, method = "class",
+              parms = list(split = 'gini'), control = rpart.control(minsplit = 5, cp = 0.0001,
+                                                                    maxdepth = 5))
+
+
+
+#Visualization of the tree
+rpart.plot(tree)
+
+
+
+#Pick the optimal tuning parameter
+cp <- tree$cptable[which.min(tree$cptable[, "xerror"]), "CP"]
+cp   #0.0002603489
+# this optimal cp is the same as the default cp that we used in rpart function
+
+
+
+#Prune the tree using the optimal cp
+treepruned <- prune(tree, cp = cp)
+#Treepruned object
+treepruned
+
+
+
+#Information by cp cross-validation results 
+printcp(treepruned)
+plotcp(treepruned)
+
+
+
+#summary information
+summary(treepruned, digits = 3)
+
+
+
+#Variable importance
+varimp <- varImp(treepruned)
+varimp
+
+
+
+#Visualization of variable importance 
+varimp <- data.frame(varimp, name = rownames(varimp))
+ggplot(varimp, aes(x = reorder(name, -Overall), y = Overall)) + 
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(color = "blue", size = 6, angle = 90))
+
+
+
+#Visualization of pruned tree
+rpart.plot(treepruned)
+
+
+
+#predicted income class from pruned tree object on train dataset
+treepred1 <- predict(treepruned, newdata = newtrain2, type = "class")
+
+
+
+#Confusion matrix - train dataset
+confusion1 <- confusionMatrix(newtrain2$income, treepred1)
+confusion1
+
+
+
+#Training accuracy rate
+(confusion1$table[1, 1] + confusion1$table[2, 2]) / sum(confusion1$table)
+
+treepred2 <- predict(treepruned, newdata = newtest2, type = "class")
+
+
+
+#Confusion matrix - test dataset
+confusion2 <- confusionMatrix(newtest2$income, treepred2)
+confusion2
+
+
+
+#Misclassification Rate of prunned tree on test dataset
+(confusion2$table[1, 2] + confusion2$table[2, 1]) / sum(confusion2$table)
+
+
+
+#Accuracy Rate of prunned tree on test dataset
+(confusion2$table[1, 1] +confusion2$table[2, 2]) / sum(confusion2$table)
+
+
+
+#ROC Curve: https://stackoverflow.com/questions/30818188/roc-curve-in-r-using-rpart-package
+#Baseline model's ROC curve
+#Getting predicted >50K of income probabilities 
+tree_prob <- predict(tree, newdata = newtest2, type = "prob")[, 2]
+tree_prediction <- prediction(tree_prob, newtest2$income)
+tree_performance <- ROCR::performance(tree_prediction, measure = "tpr", x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(tree_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+tree.auc <- ROCR::performance(tree_prediction, measure = "auc")@y.values[[1]]
+tree.auc
+
+
+
+#Pick the best threshold
+str(tree_performance)
+cutoffs <- data.frame(cut = tree_performance@alpha.values[[1]], 
+                      fpr = tree_performance@x.values[[1]], 
+                      tpr = tree_performance@y.values[[1]])
+head(cutoffs)
+roc <- pROC::roc(newtest2$income, tree_prob)
+threshold <- coords(roc, "best", ret = "threshold")
+cat("The best threshold is :  " , threshold, "\n")
+
+
+
+#Get accuracy rate of testset data using the optimal threshold  ****
+confusionMatrix(tree_prob > threshold, newtest2$income == ">50K")
+
+
+
+#Pruned model's ROC curve
+#Getting predicted >50K of income probabilities 
+pruned_prob <- predict(treepruned, newdata = newtest2, type = "prob")[, 2]
+pruned_prediction <- prediction(pruned_prob, newtest2$income)
+pruned_performance <- ROCR::performance(pruned_prediction, measure = "tpr", x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(pruned_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+pruned.auc <- ROCR::performance(pruned_prediction,
+                                measure = "auc")@y.values[[1]]
+pruned.auc
+
+
+
+#Pick the best threshold
+str(pruned_performance)
+cutoffs <- data.frame(cut = pruned_performance@alpha.values[[1]], 
+                      fpr = pruned_performance@x.values[[1]], 
+                      tpr = pruned_performance@y.values[[1]])
+head(cutoffs)
+roc <- pROC::roc(newtest2$income, pruned_prob)
+threshold <- coords(roc, "best", ret = "threshold")
+cat("The best threshold is :  " , threshold, "\n")
+
+
+
+#Get accuracy rate of testset data using the optimal threshold  ****
+confusionMatrix(pruned_prob > threshold, newtest2$income == ">50K")
+```
+
+$\\$
+
+$\\$
+
+#Classification tree Using R part function - tuning method 2
+```{r}
+set.seed(100)
+
+
+
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+# Training the Decision Tree classifier with criterion as gini index
+dtree_fit <- caret::train(income ~., data = newtrain2,
+                          method = "rpart",
+                   parms = list(split = "gini"),
+                   trControl = trctrl,
+                   tuneLength = 10)
+dtree_fit
+
+
+
+#Tuning parameter - cp
+dtree_fit$bestTune
+
+
+
+#The model we selected by using the optimal cp we got
+dtree_fit$finalModel
+
+
+
+#Plot classification tree 
+prp(dtree_fit$finalModel, box.palette = "Reds", tweak = 0.8, 
+    fallen.leaves = FALSE, faclen = 0, extra = 1)
+
+
+
+#Variable importance
+varimp2 <- varImp(dtree_fit$finalModel)
+varimp2
+
+
+
+#Visualization of variable importance 
+varimp2 <- data.frame(varimp2, name = rownames(varimp2))
+ggplot(varimp2, aes(x = reorder(name, -Overall), y = Overall)) + 
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(color = "blue", size = 6, angle = 90))
+
+
+
+#Predicted income class from the finalmodel tree object on train dataset
+treepred3 <- predict(dtree_fit$finalModel, newdata = newtrain2, type = "class")
+
+
+
+#Confusion matrix - train dataset
+confusion3 <- confusionMatrix(newtrain2$income, treepred3)
+confusion3
+
+
+
+#Training accuracy rate
+(confusion3$table[1,1] + confusion3$table[2,2]) / sum(confusion3$table)
+
+
+
+#Predicted income class from the finalmodel tree object on test dataset
+treepred4 <- predict(dtree_fit$finalModel, newdata = newtest2, type = "class")
+
+
+
+#Confusion matrix - test dataset
+confusion4 <- confusionMatrix(newtest2$income, treepred4)
+confusion4
+
+
+
+#Misclassification Rate of finalmodel tree on test dataset
+(confusion4$table[1, 2] + confusion4$table[2, 1]) / sum(confusion4$table)
+
+
+
+#Accuracy Rate of finalmodel tree on test dataset
+(confusion4$table[1, 1] + confusion4$table[2, 2]) / sum(confusion4$table)
+
+
+
+#Getting predicted >50K of income probabilities 
+gini_prob <- predict(dtree_fit, newdata = newtest2, type = "prob")[, 2]
+gini_prediction <- prediction(gini_prob, newtest2$income)
+gini_performance <- ROCR::performance(gini_prediction, measure = "tpr", x.measure = "fpr")
+
+
+
+#ROC Curve  : https://stackoverflow.com/questions/30818188/roc-curve-in-r-using-rpart-package
+#Plot ROC curve 
+plot(gini_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+gini.auc <- ROCR::performance(gini_prediction, measure = "auc")@y.values[[1]]
+gini.auc
+
+
+
+#Pick the best threshold
+str(gini_performance)
+cutoffs <- data.frame(cut = gini_performance@alpha.values[[1]], 
+                      fpr = gini_performance@x.values[[1]], 
+                      tpr = gini_performance@y.values[[1]])
+head(cutoffs)
+roc <- pROC::roc(newtest2$income, gini_prob)
+threshold <- coords(roc, "best", ret = "threshold")
+cat("The best threshold is :  ", threshold, "\n")
+
+
+
+#Get accuracy rate of testset data using the optimal threshold  ****
+confusionMatrix(gini_prob > threshold, newtest2$income == ">50K")
+
+
+
+#====================================================================
+
+
+
+#Training the Decision Tree classifier with criterion as information gain(cross entropy)
+set.seed(100)
+dtree_fit_info <- caret::train(income ~., data = newtrain2, method = "rpart",
+                   parms = list(split = "information"),
+                   trControl = trctrl,
+                   tuneLength = 10)
+dtree_fit_info
+
+
+
+#Tuning parameter - cp
+dtree_fit_info$bestTune
+
+
+
+#The model we selected by using the optimal cp we got
+dtree_fit_info$finalModel
+
+
+
+#Plot classification tree
+prp(dtree_fit_info$finalModel, box.palette = "Blues", tweak = 1.2, extra = 1)
+
+
+
+#Variable importance
+varimp3 <- varImp(dtree_fit_info$finalModel)
+varimp3
+
+
+
+#Visualization of variable importance 
+varimp3 <- data.frame(varimp3, name = rownames(varimp3))
+ggplot(varimp2, aes(x = reorder(name, -Overall), y = Overall)) + 
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(color = "blue", size = 6, angle = 90))
+
+
+
+#Predicted income class from the finalmodel tree object on train dataset
+treepred <- predict(dtree_fit_info$finalModel, newdata = newtrain2, type = "class")
+
+
+
+#Confusion matrix - train dataset
+confusion <- confusionMatrix(newtrain2$income, treepred)
+confusion
+
+
+
+#Training accuracy rate
+(confusion$table[1,1] + confusion$table[2,2]) / sum(confusion$table)
+
+
+
+#Predicted income class from the finalmodel tree object on test dataset
+treepred1 <- predict(dtree_fit_info$finalModel, newdata = newtest2, type = "class")
+
+
+
+#Confusion matrix - test dataset
+confusion1 <- confusionMatrix(newtest2$income, treepred1)
+confusion1
+
+
+
+#Misclassification Rate of finalmodel tree on test dataset
+(confusion1$table[1, 2] + confusion1$table[2, 1]) / sum(confusion1$table)
+
+
+
+#Accuracy Rate of finalmodel tree on test dataset
+(confusion1$table[1, 1] + confusion1$table[2, 2]) / sum(confusion1$table)
+
+
+
+#Getting predicted >50K of income probabilities 
+info_prob <- predict(dtree_fit_info, newdata = newtest2, type = "prob")[, 2]
+info_prediction <- prediction(info_prob, newtest2$income)
+info_performance <- ROCR::performance(info_prediction, measure = "tpr", x.measure = "fpr")
+
+
+
+#ROC Curve: https://stackoverflow.com/questions/30818188/roc-curve-in-r-using-rpart-package
+#Plot ROC curve 
+plot(info_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+info.auc <- ROCR::performance(info_prediction, measure = "auc")@y.values[[1]]
+info.auc
+
+
+
+#Pick the best threshold======================= not for accuracy
+str(info_performance)
+cutoffs <- data.frame(cut = info_performance@alpha.values[[1]], 
+                      fpr = info_performance@x.values[[1]], 
+                      tpr = info_performance@y.values[[1]])
+head(cutoffs)
+roc <- pROC::roc(newtest2$income, info_prob)
+threshold <- coords(roc, "best", ret = "threshold")
+cat("The best threshold is :  ", threshold, "\n")
+
+
+
+#Get accuracy rate of testset data using the optimal threshold  ****
+confusionMatrix(info_prob > threshold, newtest2$income == ">50K")
+```
+
+$\\$
+
+$\\$
+
+#Compare ROC and AUC from three different tuned tree
+```{r}
+set.seed(100)
+
+
+
+#Compare ROC curve 
+plot(pruned_performance, main = "ROC curve", col = "blue")
+plot(gini_performance, add = TRUE, col = "red")
+plot(tree_performance, add = TRUE, col = "green")
+plot(info_performance, add = TRUE)
+abline(a = 0, b = 1, lty = 2)
+legend("bottomright", legend = c("Pruned - 1st method", "Tunned - 2nd method",
+                                 "Tunned - 3rd method","unprunned"),
+       col = c("blue", "red", "black", "green"), lwd = 3, cex = .45, horiz = TRUE)
+
+```
+
+$\\$
+
+$\\$
+
+#Pick the best threshold for each model which leads best accuracy
+```{r}
+set.seed(100)
+
+
+
+thresholds <- seq(from = 0.001, 0.999, 0.001)
+accuracy <- c()
+
+
+
+#Using train dataset to check new accuracy driven by  new threshold
+gini_prob.train <- predict(dtree_fit, newdata = newtrain2, 
+                           type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((gini_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres1 <- which.max(accuracy) * 0.001
+thres1
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get accuracy rate of testset data using the optimal threshold
+confusionMatrix(gini_prob > thres1, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+prunned.gini.accuracy <- mean((gini_prob > thres1) == (newtest2$income == ">50K"))
+
+
+
+#Test accuracy rate by using default threshold(0.5)
+prunned.gini.accuracy.half <- mean((gini_prob > 0.5) == (newtest2$income == ">50K"))
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by  new threshold
+info_prob.train <- predict(dtree_fit_info, newdata = newtrain2, 
+                           type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i]  <- mean((info_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres2 <- which.max(accuracy) * 0.001
+thres2
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get accuracy rate of testset data using the optimal threshold
+confusionMatrix(info_prob > thres2, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+prunned.info.accuracy <- mean((info_prob > thres2) == (newtest2$income == ">50K"))
+
+
+
+#Test accuracy rate by using default threshold(0.5)
+prunned.info.accuracy.half <- mean((info_prob > 0.5) == (newtest2$income == ">50K"))
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by new threshold
+tree_prob.train <- predict(tree, newdata = newtrain2, type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((tree_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres3 <- which.max(accuracy) * 0.001
+thres3
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get accuracy rate of testset data using the optimal threshold
+confusionMatrix(tree_prob > thres3, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+unprunned.accuracy <- mean((tree_prob > thres3) == (newtest2$income == ">50K"))
+
+
+
+#Test accuracy rate by using optimal threshold
+unprunned.accuracy.half <- mean((tree_prob > 0.5) == (newtest2$income == ">50K"))
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by new threshold
+pruned_prob.train <- predict(treepruned, newdata = newtrain2, 
+                             type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((pruned_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres4 <- which.max(accuracy) * 0.001
+thres4
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get accuracy rate of testset data using the optimal threshold
+confusionMatrix(pruned_prob > thres4, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+prunned.accuracy <- mean((pruned_prob > thres4) == (newtest2$income == ">50K"))
+
+prunned.accuracy.half <- mean((pruned_prob > 0.5) == (newtest2$income == ">50K"))
+```
+
+$\\$
+
+$\\$
+
+## Compare Accuracy & AUC
+```{r}
+set.seed(100)
+
+
+
+#Compare AUC
+auc <- data.frame(pruned.auc, info.auc, gini.auc, tree.auc)
+auc[, order(auc)]
+
+
+
+#Pick the model with the largest AUC - unprunned tree
+final.auc1 <- tree
+
+
+
+#Compare Accuracy - optimal threshold
+accuracy.tree.df <- data.frame(unprunned.accuracy, prunned.accuracy,
+                          prunned.gini.accuracy, prunned.info.accuracy)
+accuracy.tree.df[, order(accuracy.tree.df)]
+
+
+
+#Pick the model with the highest Accuracy - prunned.info.accuracy
+final.thres1 <- dtree_fit_info
+
+
+
+#Compare Accuracy - default threshold (0.5) 
+accuracy.tree.df.half <- data.frame(unprunned.accuracy.half,
+                                    prunned.accuracy.half,
+                                    prunned.gini.accuracy.half,
+                                    prunned.info.accuracy.half)
+
+accuracy.tree.df.half[, order(accuracy.tree.df.half)] 
+
+
+
+#Pick the model with the highest Accuracy - - prunned.info.accuracy
+final.thres1.half <- dtree_fit_info
+```
+
+**Comment:**
+
+We found the fact that when we apply the threshold which gives us maximum accuracy rate for the training datset to predicting the test dataset, we will eventually end up with the same accuracy rate that we got from the test dataset. 
+
+We picked the unprunned tree model from AUC model selection and tunned model by information gain(cross entropy) from Accuracy rate.
+
+$\\$
+
+$\\$
+
+
+
+
+
+#Bagged Tree - simply a special case of a random forest with m = p.
+
+## Train and tune a Bagged classifier 
+```{r}
+set.seed(100)
+
+
+
+#=============================================================
+
+
+
+#Create a task
+traintask <- makeClassifTask(data = newtrain2, target = "income", positive = ">50K")
+testtask <- makeClassifTask(data = newtest2, target = "income", positive = ">50K")
+
+
+
+#Brief view of trainTask
+traintask
+
+
+
+#For deeper View
+str(getTaskData(traintask))
+
+
+
+#Create a bagging learner
+bagged <- makeLearner("classif.rpart",  parms = list(split = "gini"),
+                      predict.type = "response")
+
+
+
+#Set up the bagging algorithm which will grow 100 trees on randomized samples of data with replacement.
+bag <- makeBaggingWrapper(learner = bagged, bw.iters = 100, bw.replace = TRUE)
+# Q  :  bw.iters [integer(1)] Iterations = number of fitted models in bagging. Default is 10
+
+
+
+#To check the performance, set up a validation strategy
+#set 3 fold cross validation
+rdesc <- makeResampleDesc("CV", iters = 3L)
+
+
+
+# With 100 trees, bagging has returned an accuracy of 84.5%
+r <- resample(learner = bag , task = traintask, resampling = rdesc, 
+              measures = list(tpr, fpr, fnr, tnr, acc), show.info = T)
+
+
+
+#Show true positive rate, false positive rate, false negative rate, false positive rate, and accuracy rate from bagged model
+r
+
+
+
+#Aggr. Result: tpr.test.mean=0.514,fpr.test.mean=0.0554,fnr.test.mean=0.486,tnr.test.mean=0.945,acc.test.mean=0.843
+
+
+
+#=============================================================
+
+
+
+#Make a random bagged learner (mtry = number of variables in dataset)
+bag.rf <- makeLearner("classif.randomForest", predict.type = "response",
+                  par.vals = list(ntree = 50L, mtry = 43, 
+                                  importance = TRUE))
+
+
+
+r2 <- resample(learner = bag.rf, task = traintask, resampling = rdesc, 
+               measures = list(tpr,fpr,fnr,tnr,acc), show.info = TRUE)
+
+
+
+#Show true positive rate, false positive rate, false negative rate, false positive rate, and accuracy rate from random forest model
+r2
+
+
+
+#Aggr perf: tpr.test.mean=0.636,fpr.test.mean=0.0883,fnr.test.mean=0.364,tnr.test.mean=0.912,acc.test.mean=0.846
+
+
+
+#Internally, random forest uses a cutoff of 0.5  --> 
+#if a particular unseen observation has a probability higher than 0.5, it will be classified as >50K.
+#In random forest, we have the option to customize the internal cutoff. As the false negative rate is very high now, we'll increase the cutoff for negative classes (<=50K) and accordingly reduce it for positive classes (>50K). Then, train the model again.
+
+
+
+#Evaluating by using new cutoff
+bag.rf$par.vals <- list(ntree = 50L, mtry = 43, importance = TRUE, cutoff = c(0.55, 0.45))
+r3 <- resample(learner = bag.rf, task = traintask, resampling = rdesc, 
+              measures = list(tpr,fpr,fnr,tnr,acc), show.info = TRUE)
+
+
+
+#Show true positive rate, false positive rate, false negative rate, false positive rate, and accuracy rate from random forest model
+r3
+
+
+
+#Aggr perf: tpr.test.mean=0.636,fpr.test.mean=0.0646,fnr.test.mean=0.364,tnr.test.mean=0.935,acc.test.mean=0.864   ---> we can see that false negative rate is decreased even though the accuracy rate stays the same. I have tried cutoff = c(0.6, 0.4), cutoff = c(0.7, 0.3) but they all gave lower accuracy late.
+
+
+
+#========================================================================
+
+
+
+#Let's see how the test classification error changes as we increase the number of trees for untunned model  ( #number of trees VS test classification error)
+
+
+#Train a old untunned model
+untunnedbagged <- mlr::train(bag.rf, traintask)
+bag.untunned_ind <- predict(untunnedbagged$learner.model, newtrain2, 
+                    predict.all = T)$individual
+head(bag.untunned_ind, 2)
+n <- dim(bag.untunned_ind)[1]
+m <- ceiling(dim(bag.untunned_ind)[2] / 2)
+predicted_ind <- c()
+misclass.ind <- c()
+
+for(i in 1:m){   # number of tree
+  for(j in 1:n){
+    predicted_ind[j] <- names(which.max(table(bag.untunned_ind[j, 1:i*2-1])))
+  }
+  misclass.ind[i] <- mean(predicted_ind != newtrain2$income)
+}
+
+bag.untunned.df <- data.frame(misclass.ind, ntree = seq(1, 50, 2))
+
+ggplot(bag.untunned.df, aes(x = ntree, y = misclass.ind)) + geom_line() +
+  ggtitle("Number of trees vs Misclassification rate in training dataset - untunned bagged model")
+
+
+
+#======================== Let's actually tune the hyperparameters
+
+
+
+#Bagged tree tuning
+getParamSet(bag.rf)
+
+
+
+#Specifying the search space for hyperparameters
+bag.rf_params <- makeParamSet(makeIntegerParam("nodesize", 
+                                           lower = 10, upper = 50),
+                          makeIntegerParam("ntree", lower = 3, upper = 100))
+
+
+
+#Set validation strategy
+rdesc <- makeResampleDesc("CV", iters = 3L)
+
+
+
+#Set optimization technique
+bag.rf_ctrl <- makeTuneControlRandom(maxit = 5L)
+
+
+
+#Start Hypertuning the parameters
+bag.rf_tune <- tuneParams(learner = bag.rf, task = traintask, 
+                          resampling = rdesc,
+                   measures = list(acc), par.set = bag.rf_params,
+                   control = bag.rf_ctrl, show.info = TRUE)
+
+
+
+#Optimal hypertuned parameters
+bag.rf_tune$x
+
+
+
+#Accuracy rate from Cross Validation
+bag.rf_tune$y
+
+
+
+#Use hyperparameters for modeling
+bag.rf_tree <- setHyperPars(bag.rf, par.vals = bag.rf_tune$x)
+
+
+
+#Train a model
+bag.rforest <- mlr::train(bag.rf_tree, traintask)
+getLearnerModel(bag.rforest)
+
+
+
+#***Make plots for random forest model
+
+
+
+#========================================================================
+
+
+
+#Let's see how the test classification error changes as we increase the number of trees for tunned model  ( #number of trees VS test classification error)
+bag.tunned_ind <- predict(bag.rforest$learner.model, newtrain2, 
+                    predict.all = T)$individual
+head(bag.tunned_ind, 2)
+n <- dim(bag.tunned_ind)[1]
+m <- ceiling(dim(bag.tunned_ind)[2] / 2)
+predicted_ind <- c()
+misclass.ind <- c()
+
+for(i in 1:m){   # number of tree
+  for(j in 1:n){
+    predicted_ind[j] <- names(which.max(table(bag.tunned_ind[j, 1:i*2-1])))
+  }
+  misclass.ind[i] <- mean(predicted_ind != newtrain2$income)
+}
+
+bag.tunned.df <- data.frame(misclass.ind, ntree = seq(1, 68, 2))
+
+ggplot(bag.tunned.df, aes(x = ntree, y = misclass.ind)) + geom_line() +
+  ggtitle("Number of trees vs Misclassification rate in training dataset - tunned bagged model")
+
+
+
+#Variable importance statistics
+varImpPlot(bag.rforest$learner.model)
+importance(bag.rforest$learner.model)
+```
+
+$\\$
+
+$\\$
+
+```{r}
+set.seed(100)
+
+
+
+# ** Plot bagged tree
+
+
+
+# ** Make predictions on training dataset
+bag.rfclass1 <- predict(bag.rforest, traintask)
+
+
+
+#Confusion matrix on training dataset
+confusionMatrix(bag.rfclass1$data$response, bag.rfclass1$data$truth)
+
+
+
+#Make random forest plots on training dataset
+plot(bag.rfclass1$data$response, newtrain2$income)
+abline(0, 1)
+
+
+
+#Training accuracy rate
+1 - mean(bag.rfclass1$data$response != newtrain2$income)
+
+
+
+#Make predictions on test dataset
+bag.rfclass2 <- predict(bag.rforest, testtask)
+
+
+
+#Confusion matrix on test dataset
+confusionMatrix(bag.rfclass2$data$response, bag.rfclass2$data$truth)
+
+
+
+#Make random forest plots on test dataset
+plot(bag.rfclass2$data$response, newtest2$income)
+abline(0, 1)
+
+
+
+#Test accuracy rate
+1 - mean(bag.rfclass2$data$response != newtest2$income)
+```
+
+$\\$
+
+$\\$
+
+#ROC and AUC
+```{r}
+set.seed(100)
+
+
+
+#ROC Curve: https://stackoverflow.com/questions/30818188/roc-curve-in-r-using-rpart-package
+#Untunned bagged tree model
+#Getting predicted >50K of income probabilities 
+untunned.bag.rf <- mlr::train(bag.rf, traintask)
+untunned.bag.rf_prob <- predict(untunned.bag.rf$learner.model,
+                            newdata = newtest2, type = "prob")[, 2]
+untunned.bag.rf_prediction <- prediction(untunned.bag.rf_prob,
+                                         newtest2$income)
+untunned.bag.rf_performance <- ROCR::performance(untunned.bag.rf_prediction,
+                                                 measure = "tpr", 
+                                                 x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(untunned.bag.rf_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+untunned.bag.rf.auc <- ROCR::performance(untunned.bag.rf_prediction,
+                                     measure = "auc")@y.values[[1]]
+untunned.bag.rf.auc
+
+
+
+#=====================================================================
+
+
+
+#Tunned bagged tree model
+#Getting predicted >50K of income probabilities 
+tunned.bag.rf_prob <- predict(bag.rforest$learner.model, newdata = newtest2,
+                     type = "prob")[, 2]
+tunned.bag.rf_prediction <- prediction(tunned.bag.rf_prob, newtest2$income)
+tunned.bag.rf_performance <- ROCR::performance(tunned.bag.rf_prediction,
+                                               measure = "tpr",
+                                               x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(tunned.bag.rf_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+tunned.bag.rf.auc <- ROCR::performance(tunned.bag.rf_prediction,
+                                   measure = "auc")@y.values[[1]]
+tunned.bag.rf.auc
+```
+
+$\\$
+
+$\\$
+
+#Compare ROC and AUC from three different tuned tree
+```{r}
+set.seed(100)
+
+
+
+#Compare ROC curve 
+plot(tunned.bag.rf_performance, main = "ROC curve", col = "blue")
+plot(untunned.bag.rf_performance, add = TRUE, col = "red")
+abline(a = 0, b = 1, lty = 2)
+legend("bottomright", legend = c("Tunned", "Untunned"), col = c("blue", "red"),
+       lwd = 3, cex = .8, horiz = TRUE)
+
+
+
+#Compare AUC
+auc <- data.frame(tunned.bag.rf.auc, untunned.bag.rf.auc)
+auc[, order(auc)]
+
+
+
+#Pick the model with the largest AUC --> tunned bagged tree
+final.auc2 <- bag.rforest$learner.model
+```
+
+$\\$
+
+$\\$
+
+#Pick the best threshold for each model which leads best accuracy
+```{r}
+set.seed(100)
+
+
+
+thresholds <- seq(from = 0.001, 0.999, 0.001)
+accuracy <- c()
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by  new threshold
+untunned.bag.rf_prob.train <- predict(untunned.bag.rf$learner.model,
+                            newdata = newtrain2, type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((untunned.bag.rf_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres1 <- which.max(accuracy) * 0.001
+thres1
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get confusion matrix of testset data using the optimal threshold
+confusionMatrix(untunned.bag.rf_prob > thres1, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+untunned.bagged.accuracy <- mean((untunned.bag.rf_prob > thres1) == (newtest2$income == ">50K"))
+
+
+
+#compare the test accuracy by using default threshold (0.5)
+thres.untunned.bag.half <- mean((untunned.bag.rf_prob > 0.5) == (newtest2$income == ">50K")) 
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by  new threshold
+tunned.bag.rf_prob.train <- predict(bag.rforest$learner.model,
+                            newdata = newtrain2, type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((tunned.bag.rf_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres2 <- which.max(accuracy) * 0.001
+thres2
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get confusion matrix of testset data using the optimal threshold
+confusionMatrix(tunned.bag.rf_prob > thres2, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+tunned.bagged.accuracy <- mean((tunned.bag.rf_prob > thres2) == (newtest2$income == ">50K"))
+
+
+
+#compare the test accuracy by using default threshold (0.5)
+thres.tunned.bag.half <- mean((tunned.bag.rf_prob > 0.5) == (newtest2$income == ">50K"))
+```
+
+$\\$
+
+$\\$
+
+## Compare Accuracy & AUC
+```{r}
+set.seed(100)
+
+
+
+#Compare AUC
+auc <- data.frame(tunned.bag.rf.auc, untunned.bag.rf.auc)
+auc[, order(auc)]
+
+
+
+#Pick the model with the largest AUC --> tunned bagged tree
+final.auc2 <- bag.rforest$learner.model
+
+
+
+#Compare Accuracy - optimal threshold
+accuracy.bag.df <- data.frame(tunned.bagged.accuracy,
+                              untunned.bagged.accuracy)
+accuracy.bag.df[, order(accuracy.bag.df)]
+
+
+
+#Pick the model with the highest Accuracy  - tunned.bag.rf.auc
+final.thres2 <- bag.rforest$learner.model
+
+
+
+#Compare Accuracy - 0.5 threshold
+accuracy.bag.df.half <- data.frame(thres.untunned.bag.half,
+                              thres.tunned.bag.half)
+accuracy.bag.df.half[, order(accuracy.bag.df.half)]
+
+
+
+#Pick the model with the highest Accuracy  - tunned.bag.rf.auc
+final.thres2.half <- bag.rforest$learner.model
+```
+
+$\\$
+
+$\\$
+
+
+
+
+
+#Random Forest 
+
+## Train and tune a Random Forest classifier 
+```{r}
+set.seed(100)
+
+
+
+#=============================================================
+
+
+
+#Create a task
+traintask <- makeClassifTask(data = newtrain2, target = "income", positive = ">50K")
+testtask <- makeClassifTask(data = newtest2, target = "income", positive = ">50K")
+
+
+
+#Brief view of trainTask
+traintask
+
+
+
+#For deeper View
+str(getTaskData(traintask))
+
+
+
+#=============================================================
+
+
+
+#Make a random forest learner
+rf <- makeLearner("classif.randomForest", predict.type = "response",
+                  par.vals = list(ntree = 50L, importance = TRUE))
+
+
+
+#To check the performance, set up a validation strategy
+#set 3 fold cross validation
+rdesc <- makeResampleDesc("CV", iters = 3L)
+
+
+
+r2 <- resample(learner = rf, task = traintask, resampling = rdesc, 
+               measures = list(tpr,fpr,fnr,tnr,acc), show.info = TRUE)
+
+
+
+#Show true positive rate, false positive rate, false negative rate, false positive rate, and accuracy rate from random forest model
+r2
+
+
+
+#Aggr. Result: tpr.test.mean=0.623,fpr.test.mean=0.0598,fnr.test.mean=0.377,tnr.test.mean=0.94,acc.test.mean=0.865
+
+
+
+#Internally, random forest uses a cutoff of 0.5  --> 
+#if a particular unseen observation has a probability higher than 0.5, it will be classified as >50K.
+#In random forest, we have the option to customize the internal cutoff. As the false negative rate is very high now, we'll increase the cutoff for negative classes (<=50K) and accordingly reduce it for positive classes (>50K). Then, train the model again.
+
+
+
+#Evaluating by using new cutoff
+rf$par.vals <- list(ntree = 50L, importance = TRUE, cutoff = c(0.53, 0.47))
+r3 <- resample(learner = rf, task = traintask, resampling = rdesc, 
+              measures = list(tpr,fpr,fnr,tnr,acc), show.info = TRUE)
+
+
+
+#Show true positive rate, false positive rate, false negative rate, false positive rate, and accuracy rate from random forest model
+r3
+
+
+
+#Aggr. Result: tpr.test.mean=0.651,fpr.test.mean=0.0683,fnr.test.mean=0.349,tnr.test.mean=0.932,acc.test.mean=0.865    ---> we can see that false negative rate is decreased even though the accuracy rate stays the same. I have tried cutoff = c(0.6, 0.4), cutoff = c(0.7, 0.3) but they all gave lower accuracy late.
+
+
+
+#========================================================================
+
+
+
+#Random Forest tuning
+
+
+
+#Train a old untunned model
+untunnedforest <- mlr::train(rf, traintask)
+
+
+
+#Let's see how the test classification error changes as we increase the number of trees for untunned model   ( #number of trees VS test classification error)
+
+rf.untunned_ind <- predict(untunnedforest$learner.model, newtrain2, 
+                    predict.all = T)$individual
+
+head(rf.untunned_ind,2)
+n <- dim(rf.untunned_ind)[1]
+m <- dim(rf.untunned_ind)[2] / 2
+predicted_ind <- c()
+misclass.ind <- c()
+
+for(i in 1:m){   # number of tree
+  for(j in 1:n){
+    predicted_ind[j] <- names(which.max(table(rf.untunned_ind[j, 1:i*2-1])))
+  }
+  misclass.ind[i] <- mean(predicted_ind != newtrain2$income)
+}
+
+rf.untunned.df <- data.frame(misclass.ind, ntree = seq(1, 49, 2))
+
+
+
+ggplot(rf.untunned.df, aes(x = ntree, y = misclass.ind)) + geom_line() +
+  ggtitle("Number of trees vs Misclassification rate in training dataset - untunned random forest model")
+
+
+
+#======================== Let's actually tune the hyperparameters
+
+getParamSet(rf)
+
+
+
+#Specifying the search space for hyperparameters
+rf_params <- makeParamSet(makeIntegerParam("mtry", lower = 2, upper = 10),
+                       makeIntegerParam("nodesize", lower = 10, upper = 50),
+                       makeIntegerParam("ntree", lower = 3, upper = 100)
+                       )
+
+
+
+#Set validation strategy
+rdesc <- makeResampleDesc("CV", iters = 3L)
+
+
+
+#Set optimization technique
+rf_ctrl <- makeTuneControlRandom(maxit = 5L)
+
+
+
+#Start Hypertuning the parameters
+rf_tune <- tuneParams(learner = rf, task = traintask, resampling = rdesc,
+                   measures = list(acc), par.set = rf_params,
+                   control = rf_ctrl, show.info = TRUE)
+
+
+
+#Optimal hypertuned parameters
+rf_tune$x
+
+
+
+#Accuracy rate from Cross Validation
+rf_tune$y
+
+
+
+#Use hyperparameters for modeling
+rf_tree <- setHyperPars(rf, par.vals = rf_tune$x)
+
+
+
+#Train a model
+rforest <- mlr::train(rf_tree, traintask)
+getLearnerModel(rforest)
+
+
+
+#========================================================================
+
+
+
+#Let's see how the test classification error changes as we increase the number of trees for tunned model  ( #number of trees VS test classification error)
+
+
+
+rf.tunned_ind <- predict(rforest$learner.model, newtrain2, 
+                    predict.all = T)$individual
+head(rf.tunned_ind,2)
+n <- dim(rf.tunned_ind)[1]
+m <- ceiling(dim(rf.tunned_ind)[2] / 2)
+predicted_ind <- c()
+misclass.ind <- c()
+
+for(i in 1:m){   # number of tree
+  for(j in 1:n){
+    predicted_ind[j] <- names(which.max(table(rf.tunned_ind[j, 1:i*2-1])))
+  }
+  misclass.ind[i] <- mean(predicted_ind != newtrain2$income)
+}
+
+rf.tunned.df <- data.frame(misclass.ind, ntree = seq(1, 80, 2))
+
+
+
+ggplot(rf.untunned.df, aes(x = ntree, y = misclass.ind)) + geom_line() +
+  ggtitle("Number of trees vs Misclassification rate in training dataset - tunned random forest model")
+
+
+
+#========================================================================
+
+
+
+#***Make plots for random forest model
+
+
+
+#Variable importance statistics
+varImpPlot(rforest$learner.model)
+importance(rforest$learner.model)
+```
+
+$\\$
+
+$\\$
+
+```{r}
+set.seed(100)
+
+
+
+# ** Plot (top) subset of random forest tree
+plot(rforest$learner.model)
+#getTree(rforest$learner.model, k = 10, labelVar = TRUE)
+
+
+
+# ** Make predictions on training dataset
+rfclass1 <- predict(rforest, traintask)
+
+
+
+#Confusion matrix on training dataset
+confusionMatrix(rfclass1$data$response, rfclass1$data$truth)
+
+
+
+#Make random forest plots on training dataset
+plot(rfclass1$data$response, newtrain2$income)
+abline(0, 1)
+
+
+
+#Training accuracy rate
+1 - mean(rfclass1$data$response != newtrain2$income)
+
+
+
+#Make predictions on test dataset
+rfclass2 <- predict(rforest, testtask)
+
+
+
+#Confusion matrix on test dataset
+confusionMatrix(rfclass2$data$response, rfclass2$data$truth)
+
+
+
+#Make random forest plots on test dataset
+plot(rfclass2$data$response, newtest2$income)
+abline(0,1)
+
+
+
+#Test accuracy rate
+1 - mean(rfclass2$data$response != newtest2$income)
+```
+
+$\\$
+
+$\\$
+
+##ROC and AUC
+```{r}
+set.seed(100)
+
+
+
+#ROC Curve: https://stackoverflow.com/questions/30818188/roc-curve-in-r-using-rpart-package
+#Untunned random forest model
+#Getting predicted >50K of income probabilities 
+untunned.forest <- mlr::train(rf, traintask)
+untunned.rf_prob <- predict(untunned.forest$learner.model,
+                            newdata = newtest2, type = "prob")[, 2]
+untunned.rf_prediction <- prediction(untunned.rf_prob, newtest2$income)
+untunned.rf_performance <- ROCR::performance(untunned.rf_prediction, measure = "tpr",
+                                             x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(untunned.rf_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+untunned.rf.auc <- ROCR::performance(untunned.rf_prediction,
+                                     measure = "auc")@y.values[[1]]
+untunned.rf.auc
+
+
+
+#=====================================================================
+
+
+
+#Tunned random forest model
+#Getting predicted >50K of income probabilities 
+tunned.rf_prob <- predict(rforest$learner.model, newdata = newtest2,
+                     type = "prob")[, 2]
+tunned.rf_prediction <- prediction(tunned.rf_prob, newtest2$income)
+tunned.rf_performance <- ROCR::performance(tunned.rf_prediction, measure = "tpr", x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(tunned.rf_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+tunned.rf.auc <- ROCR::performance(tunned.rf_prediction,
+                                   measure="auc")@y.values[[1]]
+tunned.rf.auc
+```
+
+$\\$
+
+$\\$
+
+#Compare ROC and AUC from three different tuned tree
+```{r}
+set.seed(100)
+
+
+
+#Compare ROC curve 
+plot(tunned.rf_performance, main = "ROC curve", col = "blue")
+plot(untunned.rf_performance, add = TRUE, col = "red")
+abline(a = 0, b = 1, lty = 2)
+legend("bottomright", legend = c("Tunned", "Untunned"), col = c("blue", "red"),
+       lwd = 3, cex = .8, horiz = TRUE)
+
+```
+
+$\\$
+
+$\\$
+
+#Pick the best threshold for each model which leads best accuracy
+```{r}
+set.seed(100)
+
+
+
+thresholds <- seq(from = 0.001, 0.999, 0.001)
+accuracy <- c()
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by  new threshold
+untunned.rf_prob.train <- predict(untunned.forest$learner.model,
+                            newdata = newtrain2, type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((untunned.rf_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres1 <- which.max(accuracy) * 0.001
+thres1
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get confusion matrix of testset data using the optimal threshold
+confusionMatrix(untunned.rf_prob > thres1, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+rf.untunned.accuracy <- mean((untunned.rf_prob > thres1) == (newtest2$income == ">50K"))
+
+
+
+#compare the test accuracy by using default threshold (0.5)
+rf.untunned.accuracy.half <- mean((untunned.rf_prob > 0.5) == (newtest2$income == ">50K"))
+
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by  new threshold
+tunned.rf_prob.train <- predict(rforest$learner.model,
+                            newdata = newtrain2, type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((tunned.rf_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres2 <- which.max(accuracy) * 0.001
+thres2
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get confusion matrix of testset data using the optimal threshold
+confusionMatrix(tunned.rf_prob > thres2, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+rf.tunned.accuracy <- mean((tunned.rf_prob > thres2) == (newtest2$income == ">50K"))
+
+
+
+#compare the test accuracy by using default threshold (0.5)
+rf.tunned.accuracy.half <- mean((tunned.rf_prob > 0.5) == (newtest2$income == ">50K"))
+```
+
+$\\$
+
+$\\$
+
+##Compare AUC and Accuracy
+```{r}
+set.seed(100)
+
+
+
+#Compare AUC
+auc <- data.frame(tunned.rf.auc, untunned.rf.auc)
+auc[, order(auc)]
+
+
+
+#Pick the model with the largest AUC
+final.auc3 <- rforest$learner.model
+
+
+
+#Compare Accuracy - optimal threshold
+accuracy.random.df <- data.frame(rf.tunned.accuracy, rf.untunned.accuracy)
+accuracy.random.df[, order(accuracy.random.df)]
+
+
+
+#Pick the model with the highest Accuracy 
+final.thres3 <- rforest$learner.model
+
+
+
+#Compare Accuracy - default threshold(0.5)
+accuracy.random.df.half <- data.frame(rf.tunned.accuracy.half,
+                                      rf.untunned.accuracy.half)
+accuracy.random.df.half[, order(accuracy.random.df.half)]
+
+
+
+#Pick the model with the largest Accuracy 
+final.thres3.half <- untunned.forest$learner.model
+```
+
+$\\$
+
+$\\$
+
+
+
+
+
+#Boosted Tree
+
+#Boosted Trees with five different models
+```{r}
+set.seed(100)
+
+
+
+#Change to binary digit
+combined <- rbind(newtrain2, newtest2)
+combined$income <- as.numeric(combined$income) - 1
+
+
+
+#First model
+boosting1 <- gbm(income ~., data = combined[1:32402, ], distribution = "bernoulli", n.trees = 5000,
+                interaction.depth = 5)
+summary(boosting1)
+varImp(boosting1, numTrees = 5000)
+
+
+
+#Test error of the first model
+set.seed(100)
+testerror1 <- c()
+thresh <- 0.5
+for(i in 1:500){
+  #If I do not type = "response", they will give you logit output.
+  yhat <- predict(boosting1, newdata = combined[32403:48598, -44], n.trees = (10 * i),
+                  type = "response")
+  yhat <- (yhat > thresh)
+  testerror1[i] <- mean(yhat != combined[32403:48598, 44])
+}
+plot(testerror1)
+
+
+
+#ROC curve - testing
+pos1 <- c()
+pos1 <- predict(boosting1, newdata = combined[32403:48598, -44], n.trees = 5000, type = "response")
+predicts1 <- prediction(pos1, combined[32403:48598, 44])
+roc1 <- ROCR::performance(predicts1, measure = "tpr", x.measure = "fpr")
+plot(roc1)
+abline(0, 1, col = "red")
+auc1 <- ROCR::performance(predicts1, measure = "auc")
+auc1@y.values
+
+
+
+#Train error of the first model
+set.seed(100)
+trainerror1 <- c()
+thresh <- 0.5
+for(i in 1:500){
+  yhat <- predict(boosting1, newdata = combined[1:32402, -44], n.trees = (10 * i), type = "response")
+  yhat <- (yhat > thresh)
+  trainerror1[i] <- mean(yhat != combined[1:32402, 44])
+}
+plot(trainerror1)
+
+
+
+#ROC curve - training
+pos1b <- c()
+pos1b <- predict(boosting1, newdata = combined[1:32402, -44], n.trees = 5000, type = "response")
+predicts1b <- prediction(pos1b, combined[1:32402, 44])
+roc1b <- ROCR::performance(predicts1b, measure = "tpr", x.measure = "fpr")
+plot(roc1b)
+abline(0, 1, col = "red")
+auc1b <- ROCR::performance(predicts1b, measure = "auc")
+auc1b@y.values
+
+
+
+#Second model
+set.seed(100)
+boosting2 <- gbm(income ~., data = combined[1:32402, ], distribution = "bernoulli", n.trees = 2000,
+                interaction.depth = 5)
+summary(boosting2)
+varImp(boosting2, numTrees = 2000)
+
+
+
+#Test error of the second model
+set.seed(100)
+testerror2 <- c()
+thresh <- 0.5
+for(i in 1:200){
+  yhat <- predict(boosting2, newdata = combined[32403:48598, -44], n.trees = (10 * i),
+                  type = "response")
+  yhat <- (yhat > thresh)
+  testerror2[i] <- mean(yhat != combined[32403:48598, 44])
+}
+plot(testerror2)
+
+
+
+#ROC curve - testing
+pos2 <- c()
+pos2 <- predict(boosting2, newdata = combined[32403:48598, -44], n.trees = 2000, type = "response")
+predicts2 <- prediction(pos2, combined[32403:48598, 44])
+roc2 <- ROCR::performance(predicts2, measure = "tpr", x.measure = "fpr")
+plot(roc2)
+abline(0, 1, col = "red")
+auc2 <- ROCR::performance(predicts2, measure = "auc")
+auc2@y.values
+
+
+
+#Train error of the second model
+set.seed(100)
+trainerror2 <- c()
+thresh <- 0.5
+for(i in 1:200){
+  yhat <- predict(boosting2, newdata = combined[1:32402, -44], n.trees = (10 * i), type = "response")
+  yhat <- (yhat > thresh)
+  trainerror2[i] <- mean(yhat != combined[1:32402, 44])
+}
+plot(trainerror2)
+
+
+
+#ROC curve - training
+pos2b <- c()
+pos2b <- predict(boosting2, newdata = combined[1:32402, -44], n.trees = 2000, type = "response")
+predicts2b <- prediction(pos2b, combined[1:32402, 44])
+roc2b <- ROCR::performance(predicts2b, measure = "tpr", x.measure = "fpr")
+plot(roc2b)
+abline(0, 1, col = "red")
+auc2b <- ROCR::performance(predicts2b, measure = "auc")
+auc2b@y.values
+
+
+
+#Third model
+set.seed(100)
+boosting3 <- gbm(income ~., data = combined[1:32402, ], distribution = "bernoulli", n.trees = 5000,
+                interaction.depth = 3)
+summary(boosting3)
+varImp(boosting3, numTrees = 5000)
+
+
+
+#Test error of the third model
+set.seed(100)
+testerror3 <- c()
+thresh <- 0.5
+for(i in 1:500){
+  yhat <- predict(boosting3, newdata = combined[32403:48598, -44], n.trees = (10 * i),
+                  type = "response")
+  yhat <- (yhat > thresh)
+  testerror3[i] <- mean(yhat != combined[32403:48598, 44])
+}
+plot(testerror3)
+
+
+
+#ROC curve - testing
+pos3 <- c()
+pos3 <- predict(boosting3, newdata = combined[32403:48598, -44], n.trees = 5000, type = "response")
+predicts3 <- prediction(pos3, combined[32403:48598, 44])
+roc3 <- ROCR::performance(predicts3, measure = "tpr", x.measure = "fpr")
+plot(roc3)
+abline(0, 1, col = "red")
+auc3 <- ROCR::performance(predicts3, measure = "auc")
+auc3@y.values
+
+
+
+#Train error of the third model
+set.seed(100)
+trainerror3 <- c()
+thresh <- 0.5
+for(i in 1:500){
+  yhat <- predict(boosting3, newdata = combined[1:32402, -44], n.trees = (10 * i), type = "response")
+  yhat <- (yhat > thresh)
+  trainerror3[i] <- mean(yhat != combined[1:32402, 44])
+}
+plot(trainerror3)
+
+
+
+#ROC curve - training
+pos3b <- c()
+pos3b <- predict(boosting3, newdata = combined[1:32402, -44], n.trees = 5000, type = "response")
+predicts3b <- prediction(pos3b, combined[1:32402, 44])
+roc3b <- ROCR::performance(predicts3b, measure = "tpr", x.measure = "fpr")
+plot(roc3b)
+abline(0, 1, col = "red")
+auc3b <- ROCR::performance(predicts3b, measure = "auc")
+auc3b@y.values
+
+
+
+#Fourth model
+set.seed(100)
+boosting4 <- gbm(income ~., data = combined[1:32402, ], distribution = "bernoulli", n.trees = 5000,
+                interaction.depth = 3, shrinkage = 0.2)
+summary(boosting4)
+varImp(boosting4, numTrees = 5000)
+
+
+
+#Test error of the fourth model
+set.seed(100)
+testerror4 <- c()
+thresh <- 0.5
+for(i in 1:500){
+  yhat <- predict(boosting4, newdata = combined[32403:48598, -44], n.trees = (10 * i),
+                  type = "response")
+  yhat <- (yhat > thresh)
+  testerror4[i] <- mean(yhat != combined[32403:48598, 44])
+}
+plot(testerror4)
+
+
+
+#ROC curve - testing
+pos4 <- c()
+pos4 <- predict(boosting4, newdata = combined[32403:48598, -44], n.trees = 150, type = "response")
+predicts4 <- prediction(pos4, combined[32403:48598, 44])
+roc4 <- ROCR::performance(predicts4, measure = "tpr", x.measure = "fpr")
+plot(roc4)
+abline(0, 1, col = "red")
+auc4 <- ROCR::performance(predicts4, measure = "auc")
+auc4@y.values
+
+
+
+#Train error of the fourth model
+set.seed(100)
+trainerror4 <- c()
+thresh <- 0.5
+for(i in 1:500){
+  yhat <- predict(boosting4, newdata = combined[1:32402, -44], n.trees = (10 * i), type = "response")
+  yhat <- (yhat > thresh)
+  trainerror4[i] <- mean(yhat != combined[1:32402, 44])
+}
+plot(trainerror4)
+
+
+
+#ROC curve - training
+pos4b <- c()
+pos4b <- predict(boosting4, newdata = combined[1:32402, -44], n.trees = 5000, type = "response")
+predicts4b <- prediction(pos4b, combined[1:32402, 44])
+roc4b <- ROCR::performance(predicts4b, measure = "tpr", x.measure = "fpr")
+plot(roc4b)
+abline(0, 1, col = "red")
+auc4b <- ROCR::performance(predicts4b, measure = "auc")
+auc4b@y.values
+
+
+
+#Fifth model
+set.seed(100)
+boosting5 <- gbm(income ~., data = combined[1:32402, ], distribution = "bernoulli", n.trees = 5000,
+                interaction.depth = 3, shrinkage = 0.1)
+summary(boosting5)
+varImp(boosting5, numTrees = 5000)
+
+
+
+#Test error of the fifth model
+set.seed(100)
+testerror5 <- c()
+thresh <- 0.5
+for(i in 1:500){
+  yhat <- predict(boosting5, newdata = combined[32403:48598, -44], n.trees = (10 * i),
+                  type = "response")
+  yhat <- (yhat > thresh)
+  testerror5[i] <- mean(yhat != combined[32403:48598, 44])
+}
+plot(testerror5)
+
+
+
+#ROC curve - testing
+pos5 <- c()
+pos5 <- predict(boosting5, newdata = combined[32403:48598, -44], n.trees = 800, type = "response")
+predicts5 <- prediction(pos5, combined[32403:48598, 44])
+roc5 <- ROCR::performance(predicts5, measure = "tpr", x.measure = "fpr")
+plot(roc5)
+abline(0, 1, col = "red")
+auc5 <- ROCR::performance(predicts5, measure = "auc")
+auc5@y.values
+
+
+
+#Train error of the fifth model
+set.seed(100)
+trainerror5 <- c()
+thresh <- 0.5
+for(i in 1:500){
+  yhat <- predict(boosting5, newdata = combined[1:32402, -44], n.trees = (10 * i), type = "response")
+  yhat <- (yhat > thresh)
+  trainerror5[i] <- mean(yhat != combined[1:32402, 44])
+}
+plot(trainerror5)
+
+
+
+#ROC curve - training
+pos5b <- c()
+pos5b <- predict(boosting5, newdata = combined[1:32402, -44], n.trees = 5000, type = "response")
+predicts5b <- prediction(pos5b, combined[1:32402, 44])
+roc5b <- ROCR::performance(predicts5b, measure = "tpr", x.measure = "fpr")
+plot(roc5b)
+abline(0, 1, col = "red")
+auc5b <- ROCR::performance(predicts5b, measure = "auc")
+auc5b@y.values
+
+
+
+#ROC and AUC combined testing 
+plot(roc1, type = "l", col = "red")
+par(new = TRUE)
+plot(roc2, type = "l", col = "green")
+par(new = TRUE)
+plot(roc3, type = "l", col = "blue")
+par(new = TRUE)
+plot(roc4, type = "l", col = "black")
+par(new = TRUE)
+plot(roc5, type = "l", col = "yellow",
+     main = "model1: red, model2: green, model3: blue, model4: black, model5: yellow")
+
+paste("AUC for model 1 is", round(auc1@y.values[[1]], 5))
+paste("AUC for model 2 is", round(auc2@y.values[[1]], 5))
+paste("AUC for model 3 is", round(auc3@y.values[[1]], 5))
+paste("AUC for model 4 is", round(auc4@y.values[[1]], 5))
+paste("AUC for model 5 is", round(auc5@y.values[[1]], 5))
+
+
+
+#ROC and AUC combined training 
+plot(roc1b, type = "l", col = "red")
+par(new = TRUE)
+plot(roc2b, type = "l", col = "green")
+par(new = TRUE)
+plot(roc3b, type = "l", col = "blue")
+par(new = TRUE)
+plot(roc4b, type = "l", col = "black")
+par(new = TRUE)
+plot(roc5b, type = "l", col = "yellow",
+     main = "model1: red, model2: green, model3: blue, model4: black, model5: yellow")
+
+paste("AUC for model 1 is", round(auc1b@y.values[[1]], 5))
+paste("AUC for model 2 is", round(auc2b@y.values[[1]], 5))
+paste("AUC for model 3 is", round(auc3b@y.values[[1]], 5))
+paste("AUC for model 4 is", round(auc4b@y.values[[1]], 5))
+paste("AUC for model 5 is", round(auc5b@y.values[[1]], 5))
+
+
+
+#Partial dependence plots
+variables <- c("Married.civ.spouse", "education.num", "age", "capital.gain",
+               "hours.per.week", "capital.loss")
+par(mfrow = c(2, 3))
+for(i in 1:6){
+  plot(boosting1, i = variables[i])
+}
+
+for(i in 1:6){
+  plot(boosting2, i = variables[i])
+}
+
+for(i in 1:6){
+  plot(boosting3, i = variables[i])
+}
+
+for(i in 1:6){
+  plot(boosting4, i = variables[i])
+}
+
+for(i in 1:6){
+  plot(boosting5, i = variables[i])
+}
+
+
+
+#Check imbalance
+table(combined$income)
+11443 / 48598 #23.5%
+37155 / 48598 #76.5%
+```
+
+$\\$
+
+$\\$
+
+#Train function
+```{r}
+set.seed(100)
+
+
+
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
+boostingtrain <- caret::train(income~., data = newtrain2, method = "gbm", metric = "Accuracy",
+                              trControl = trctrl)
+
+summary(boostingtrain)
+boostingtrain
+boostingtrain$bestTune
+boostingtrain$results
+boostingtrain$finalModel
+boostingtrain$resample
+boostingtrain$resampledCM
+boostingtrain$perfNames
+
+
+
+#Optimal model
+# boostingoptimal <- gbm(income ~., data = combined[1:32402, ], distribution = "bernoulli", n.trees = 150,
+#                 interaction.depth = 3, shrinkage = 0.1)
+# summary(boostingoptimal)
+# varImp(boostingoptimal, numTrees = 150)
+
+#Test error of the optimal model
+# testerroroptimal <- c()
+# thresh <- 0.5
+# for(i in 1:15){
+#   yhat <- predict(boostingtrain, newdata = combined[32403:48598, -44], n.trees = (10 * i), type = "prob")
+#   yhat <- (yhat > thresh)
+#   testerroroptimal[i] <- mean(yhat != combined[32403:48598, 44])
+# }
+# plot(testerroroptimal)
+
+
+
+#ROC curve - testing
+set.seed(100)
+posopt <- c()
+posopt <- predict(boostingtrain, newdata = combined[32403:48598, -44], n.trees = 150, type = "prob")
+predictsopt <- prediction(posopt[, 2], combined[32403:48598, 44])
+rocopt <- ROCR::performance(predictsopt, measure = "tpr", x.measure = "fpr")
+plot(rocopt)
+abline(0, 1, col = "red")
+aucopt <- ROCR::performance(predictsopt, measure = "auc")
+aucopt@y.values
+
+
+
+#ROC and AUC combined testing 
+plot(roc1, type = "l", col = "red")
+par(new = TRUE)
+plot(roc2, type = "l", col = "green")
+par(new = TRUE)
+plot(roc3, type = "l", col = "blue")
+par(new = TRUE)
+plot(roc4, type = "l", col = "black")
+par(new = TRUE)
+plot(roc5, type = "l", col = "yellow")
+par(new = TRUE)
+plot(rocopt, type = "l", col = "purple",
+     main = "1: red, 2: green, 3: blue, 4: black, 5: yellow, trained: purple")
+
+
+
+#Train error of the optimal model
+# trainerroropt <- c()
+# thresh <- 0.5
+# for(i in 1:500){
+#   yhat <- predict(boostingoptimal, newdata = combined[1:32402, -44], n.trees = (10 * i), type = "response")
+#   yhat <- (yhat > thresh)
+#   trainerroropt[i] <- mean(yhat != combined[1:32402, 44])
+# }
+# plot(trainerroropt)
+
+
+
+#ROC curve - training
+pos5opt <- c()
+pos5opt <- predict(boostingtrain, newdata = combined[1:32402, -44], n.trees = 150, type = "prob")
+predicts5opt <- prediction(pos5opt[, 2], combined[1:32402, 44])
+roc5opt <- ROCR::performance(predicts5opt, measure = "tpr", x.measure = "fpr")
+plot(roc5opt)
+abline(0, 1, col = "red")
+auc5opt <- ROCR::performance(predicts5opt, measure = "auc")
+auc5opt@y.values
+
+
+
+# boosting <- C50::C5.0(newtrain2[, -45], newtrain2[, 45], trials = 10) #boosting iteration = 10
+# summary(boosting)
+# 
+# classes <- predict(boosting, newtest2[, -45], type = "class")
+# table(classes, newtest2[, 45])
+# 
+# acc <- sum(classes == newtest2[, 45]) / length(newtest2[, 45])
+# acc
+
+
+
+# https://github.com/topepo/caret/blob/master/RegressionTests/Code/C5.0.R 
+# 
+# cctrl1 <- trainControl(method = "cv", number = 3, returnResamp = "all",
+#                        classProbs = TRUE, 
+#                        summaryFunction = twoClassSummary)
+# cctrl2 <- trainControl(method = "LOOCV",
+#                        classProbs = TRUE, summaryFunction = twoClassSummary)
+# cctrl3 <- trainControl(method = "none",
+#                        classProbs = TRUE, summaryFunction = twoClassSummary)
+# cctrlR <- trainControl(method = "cv", number = 3, returnResamp = "all",
+#                        classProbs = TRUE, 
+#                        search = "random")
+# 
+# y <- as.numeric(newtrain2$income) - 1 
+# test_class_cv_model <- train(newtrain2[, -45], y, 
+#                               method = "C5.0", 
+#                               trControl = cctrl1,
+#                               metric = "ROC", 
+#                               control = C50::C5.0Control(seed = 1),
+#                               preProc = c("center", "scale"))
+```
+
+$\\$
+
+$\\$
+
+#Threshold decision
+
+We made this chunk eval = F, since it takes extremly long to run this chunk...
+```{r, echo = F, eval = F}
+thresholds <- seq(from = 0.001, 0.999, 0.001)
+
+
+
+error <- c() #misclassfication for the first model
+for(i in 1:length(thresholds)){
+  pr <- c()
+  pr <- ifelse(predict(boosting1, newdata = combined[1:32402, -44], n.trees = 5000, type = "response")
+               > (0.001 * i), 1, 0)
+  error[i] <- mean(pr != combined[1:32402, 44])
+}
+
+
+
+error2 <- c() #misclassfication for the second model
+for(i in 1:length(thresholds)){
+  pr <- c()
+  pr <- ifelse(predict(boosting2, newdata = combined[1:32402, -44], n.trees = 2000, type = "response")
+               > (0.001 * i), 1, 0)
+  error2[i] <- mean(pr != combined[1:32402, 44])
+}
+
+
+
+error3 <- c() #misclassfication for the third model
+for(i in 1:length(thresholds)){
+  pr <- c()
+  pr <- ifelse(predict(boosting3, newdata = combined[1:32402, -44], n.trees = 5000, type = "response")
+               > (0.001 * i), 1, 0)
+  error3[i] <- mean(pr != combined[1:32402, 44])
+}
+
+
+
+error4 <- c() #misclassfication for the fourth model
+for(i in 1:length(thresholds)){
+  pr <- c()
+  pr <- ifelse(predict(boosting4, newdata = combined[1:32402, -44], n.trees = 150, type = "response")
+               > (0.001 * i), 1, 0)
+  error4[i] <- mean(pr != combined[1:32402, 44])
+}
+
+
+
+error5 <- c() #misclassfication for the fifth model
+for(i in 1:length(thresholds)){
+  pr <- c()
+  pr <- ifelse(predict(boosting5, newdata = combined[1:32402, -44], n.trees = 800, type = "response")
+               > (0.001 * i), 1, 0)
+  error5[i] <- mean(pr != combined[1:32402, 44])
+}
+
+
+
+error6 <- c() #misclassfication for the trained model
+for(i in 1:length(thresholds)){
+  pr <- c()
+  pr <- ifelse(predict(boostingtrain, newdata = combined[1:32402, -44], n.trees = 150,
+                       type = "prob")[, 2] > (0.001 * i), 1, 0)
+  error6[i] <- mean(pr != combined[1:32402, 44])
+}
+
+
+
+par(mfrow=c(1, 3))
+plot(thresholds, error)
+plot(thresholds, error2)
+plot(thresholds, error3)
+plot(thresholds, error4)
+plot(thresholds, error5)
+plot(thresholds, error6)
+```
+
+$\\$
+
+$\\$
+
+#Model selection
+```{r}
+set.seed(100)
+
+
+
+thresh <- 0.5
+
+
+
+a <- predict(boosting1, newdata = combined[32403:48598, -44], n.trees = 5000, type = "response")
+a1 <- (a > thresh)
+a2 <- mean(a1 == combined[32403:48598, 44])
+
+
+
+b <- predict(boosting2, newdata = combined[32403:48598, -44], n.trees = 2000, type = "response")
+b1 <- (b > 0.3)
+b2 <- mean(b1 == combined[32403:48598, 44])
+
+
+
+c <- predict(boosting3, newdata = combined[32403:48598, -44], n.trees = 5000, type = "response")
+c1 <- (c > thresh)
+c2 <- mean(c1 == combined[32403:48598, 44])
+
+
+
+d <- predict(boosting4, newdata = combined[32403:48598, -44], n.trees = 200, type = "response")
+d1 <- (d > thresh)
+d2 <- mean(d1 == combined[32403:48598, 44])
+
+
+
+e <- predict(boosting5, newdata = combined[32403:48598, -44], n.trees = 800, type = "response")
+e1 <- (e > thresh)
+e2 <- mean(e1 == combined[32403:48598, 44])
+
+
+
+f <- predict(boostingtrain, newdata = combined[32403:48598, -44], n.trees = 150, type = "raw")
+f1 <- as.numeric(f) - 1
+f2 <- mean(f1 == combined[32403:48598, 44])
+
+
+
+a2
+b2
+c2
+d2
+e2
+f2
+```
+
+$\\$
+
+$\\$
+
+#Best model
+```{r}
+final.auc4 <- boosting5
+
+final.thres4 <- boosting4
+```
+
+**Comment:**
+
+The model with the highest AUC and the highest testing set accuracy rate are the same! 
+
+$\\$
+
+$\\$
+
+
+
+
+
+#Final Model Selection
+```{r}
+set.seed(100)
+
+
+
+newtrain2 <- read.csv("../data/cleandata/newtrain2.csv", header = T)
+newtest2 <- read.csv("../data/cleandata/newtest2.csv", header = T)
+
+
+
+#Change to binary digit
+combined <- rbind(newtrain2, newtest2)
+combined$income <- as.numeric(combined$income) - 1
+```
+
+$\\$
+
+$\\$
+
+#Validate your best supervised classifier on the test set
+
+We picked the best classifiers from classification tree, bagged tree, and random forest by using AUC and the accuracy rate from the best threshold for training dataset.
+
+#Best classifiers by AUC 
+```{r}
+set.seed(100)
+
+
+
+#from classification 
+final.auc1
+
+
+
+#Getting predicted >50K of income probabilities 
+tree_prob <- predict(final.auc1, newdata = newtest2, type = "prob")[, 2]
+tree_prediction <- prediction(tree_prob, newtest2$income)
+tree_performance <- ROCR::performance(tree_prediction, measure = "tpr", x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(tree_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+tree.auc <- ROCR::performance(tree_prediction, measure="auc")@y.values[[1]]
+tree.auc
+
+
+
+#==============================================================
+
+
+
+#from bagged tree
+final.auc2
+
+
+
+#Getting predicted >50K of income probabilities 
+tunned.bag.rf_prob <- predict(final.auc2, newdata = newtest2,
+                     type = "prob")[, 2]
+tunned.bag.rf_prediction <- prediction(tunned.bag.rf_prob, newtest2$income)
+tunned.bag.rf_performance <- ROCR::performance(tunned.bag.rf_prediction,
+                                               measure = "tpr",
+                                               x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(tunned.bag.rf_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+tunned.bag.rf.auc <- ROCR::performance(tunned.bag.rf_prediction,
+                                   measure = "auc")@y.values[[1]]
+tunned.bag.rf.auc
+
+
+
+#==============================================================
+
+
+
+#from random forest
+final.auc3
+
+
+
+#Getting predicted >50K of income probabilities 
+tunned.rf_prob <- predict(final.auc3, newdata = newtest2, 
+                            type = "prob")[, 2]
+tunned.rf_prediction <- prediction(tunned.rf_prob, newtest2$income)
+tunned.rf_performance <- ROCR::performance(tunned.rf_prediction, measure = "tpr", x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(tunned.rf_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+tunned.rf.auc <- ROCR::performance(tunned.rf_prediction,
+                                     measure = "auc")@y.values[[1]]
+tunned.rf.auc
+
+
+
+#==============================================================
+
+
+
+#from boosted
+final.auc4
+
+
+
+#ROC curve - testing
+pos5 <- c()
+pos5 <- predict(final.auc4, newdata = combined[32403:48598, -44], n.trees = 800, type = "response")
+predicts5 <- prediction(pos5, combined[32403:48598, 44])
+roc5 <- ROCR::performance(predicts5, measure = "tpr", x.measure = "fpr")
+plot(roc5, main = "ROC curve")
+abline(0, 1, col = "red")
+auc5 <- ROCR::performance(predicts5, measure = "auc")
+auc5@y.values
+```
+
+$\\$
+
+$\\$
+
+#Confusion matrix - AUC criterion
+```{r}
+set.seed(100)
+
+
+
+tree_class <- predict(final.auc1, newdata = newtest2, type = "class")
+confusionMatrix(tree_class, newtest2$income)
+
+
+
+#==============================================================
+
+
+
+tunned.bag.rf_class <- predict(final.auc2, newdata = newtest2,
+                     type = "class")
+confusionMatrix(tunned.bag.rf_class, newtest2$income)
+
+
+
+#==============================================================
+
+
+
+tunned.rf_class <- predict(final.auc3, newdata = newtest2, 
+                            type = "class")
+confusionMatrix(tunned.rf_class, newtest2$income)
+
+
+
+#==============================================================
+
+
+
+boosted_class <- predict.gbm(final.auc4, 
+                             newdata = combined[32403:48598, -44],
+                n.trees = 800, type = "response")
+boosted_class <- ifelse(boosted_class > 0.5, ">50K", "<=50K")
+confusionMatrix(boosted_class, newtest2$income)
+```
+
+$\\$
+
+$\\$
+
+#Combine ROC curves
+```{r}
+set.seed(100)
+
+
+
+#Plot ROC curve 
+plot(tree_performance, main="ROC curve", col = "blue")   # classification
+plot(tunned.bag.rf_performance, add = T, col = "red")  # bagged
+plot(tunned.rf_performance, add = T, col = "green") # random forest
+plot(roc5, add = T) # boosted
+abline(a = 0, b = 1, lty = 2)
+legend("bottomright", legend = c("Classification", "Bagged",
+                                 "Boosted","Random Forest"),
+       col=c("blue", "red", "black", "green"), lwd = 3, cex = .5, horiz = TRUE)
+
+
+
+AUC.final <- data.frame(tree.auc, tunned.bag.rf.auc, tunned.rf.auc,
+                        boosted.auc = auc5@y.values[[1]])
+
+
+
+AUC.final[, order(AUC.final)]
+```
+
+$\\$
+
+$\\$
+
+##TPR v.s. TNR
+```{r}
+set.seed(100)
+
+
+
+#from classification 
+final.auc1
+
+
+
+#Getting predicted >50K of income probabilities 
+tree_prob <- predict(final.auc1, newdata = newtest2, type = "prob")[, 2]
+tree_prediction <- prediction(tree_prob, newtest2$income)
+tree_performance <- ROCR::performance(tree_prediction, measure = "tpr", x.measure = "tnr")
+
+
+
+#Plot ROC curve 
+plot(tree_performance, main = "TPR v.s. TNR")
+abline(a = 1, b = -1, lty = 2)
+
+
+
+#==============================================================
+
+
+
+#from bagged tree
+final.auc2
+
+
+
+#Getting predicted >50K of income probabilities 
+tunned.bag.rf_prob <- predict(final.auc2, newdata = newtest2,
+                     type = "prob")[, 2]
+tunned.bag.rf_prediction <- prediction(tunned.bag.rf_prob, newtest2$income)
+tunned.bag.rf_performance <- ROCR::performance(tunned.bag.rf_prediction,
+                                               measure = "tpr",
+                                               x.measure = "tnr")
+
+
+
+#Plot ROC curve 
+plot(tunned.bag.rf_performance, main="TPR v.s. TNR")
+abline(a = 1, b = -1, lty = 2)
+
+
+
+#==============================================================
+
+
+
+#from random forest
+final.auc3
+
+
+
+#Getting predicted >50K of income probabilities 
+tunned.rf_prob <- predict(final.auc3, newdata = newtest2, 
+                            type = "prob")[, 2]
+tunned.rf_prediction <- prediction(tunned.rf_prob, newtest2$income)
+tunned.rf_performance <- ROCR::performance(tunned.rf_prediction, measure = "tpr", x.measure = "tnr")
+
+
+
+#Plot ROC curve 
+plot(tunned.rf_performance, main = "TPR v.s. TNR")
+abline(a = 1, b = -1, lty = 2)
+
+
+
+#==============================================================
+
+
+
+#from boosted
+final.auc4
+
+
+
+#ROC curve - testing
+pos5 <- c()
+pos5 <- predict(final.auc4, newdata = combined[32403:48598, -44], n.trees = 800, type = "response")
+predicts5 <- prediction(pos5, combined[32403:48598, 44])
+roc5 <- ROCR::performance(predicts5, measure = "tpr", x.measure = "tnr")
+plot(roc5, main="TPR v.s. TNR")
+abline(a = 1, b = -1, col = "red")
+
+
+
+plot(tree_performance, main = "TPR v.s. TNR - AUC selection", col = "blue")
+plot(tunned.bag.rf_performance, col = "red", add = TRUE)
+plot(tunned.rf_performance, col = "green", add = TRUE)
+plot(roc5, add = TRUE)
+abline(a = 1, b = -1, lty = 2)
+legend("bottomleft", legend = c("Classification", "Bagged",
+                                 "Boosted","Random Forest"),
+       col=c("blue", "red", "black", "green"), lwd = 3, cex = .5, horiz = TRUE)
+
+```
+
+$\\$
+
+$\\$
+
+##Best classifiers by accuracy with the optimal threshold
+```{r}
+set.seed(100)
+
+
+
+#from classification 
+#final.thres1
+info_prob <- predict(final.thres1.half, newdata = newtest2, type = "prob")[, 2]
+
+
+
+#Test accuracy rate by using default cutoff 0.5
+prunned.info.accuracy <- mean((info_prob > 0.5) == (newtest2$income == ">50K"))
+cat("Accuracy classification :  ", prunned.info.accuracy, "\n")
+
+
+
+#==============================================================
+
+
+
+
+#from bagged tree 
+#final.thres2  # bag.rforest$learner.model
+tunned.bag.rf_prob <- predict(final.thres2.half, newdata = newtest2,
+                     type = "prob")[, 2]
+
+
+
+#Test accuracy rate by using default cutoff 0.5
+tunned.bagged.accuracy <- mean((tunned.bag.rf_prob > 0.5) == (newtest2$income == ">50K"))
+cat("Accuracy Bagged :  ", tunned.bagged.accuracy, "\n")
+
+
+
+#==============================================================
+
+
+
+#from random forest
+#final.thres3  # untunned.forest$learner.model
+untunned.rf_prob <- predict(final.thres3.half, newdata = newtest2,
+                            type = "prob")[, 2]
+
+
+
+#Test accuracy rate by using default cutoff 0.5
+rf.untunned.accuracy <- mean((untunned.rf_prob > 0.5) == (newtest2$income == ">50K"))
+cat("Accuracy Random Forest :  ", rf.untunned.accuracy, "\n")
+
+
+
+#==============================================================
+
+
+
+#from boosting
+#final.thres4
+e <- predict(final.thres4, newdata = combined[32403:48598, -44], n.trees = 800, type = "response")
+e1 <- (e > 0.5)
+e2 <- mean(e1 == combined[32403:48598, 44])
+cat("Accuracy Boosted :  ", e2, "\n")
+```
+
+**Comment:**
+
+So our best classifier from accuracy criterion is Boosted tree. 
+
+$\\$
+
+$\\$
+
+#Confusion matrix - Accuracy criterion
+```{r}
+set.seed(100)
+
+
+
+classification_class2 <- predict(final.thres1.half$finalModel, newdata = newtest2, type = "class")
+confusionMatrix(classification_class2, newtest2$income)
+
+
+
+#==============================================================
+
+
+
+tunned.bag.rf_class2 <- predict(final.thres2.half, newdata = newtest2,
+                     type = "class")
+confusionMatrix(tunned.bag.rf_class2, newtest2$income)
+
+
+
+#==============================================================
+
+
+
+untunned.rf_class2 <- predict(final.thres3.half, newdata = newtest2,
+                            type = "class")
+confusionMatrix(untunned.rf_class2, newtest2$income)
+
+
+
+#==============================================================
+
+
+
+boosted_class2 <- predict(final.thres4, newdata = combined[32403:48598, -44], n.trees = 800,
+                          type = "response")
+boosted_class2 <- ifelse(boosted_class2 > 0.5, ">50K", "<=50K")
+confusionMatrix(boosted_class2, newtest2$income)
+```
+
+$\\$
+
+$\\$
+
+#TPR v.s. TNR
+```{r}
+set.seed(100)
+
+
+
+#from classification 
+final.thres1.half
+
+
+
+#Getting predicted >50K of income probabilities 
+tree_prob2 <- predict(final.thres1.half, newdata = newtest2, 
+                      type = "prob")[, 2]
+tree_prediction2 <- prediction(tree_prob2, newtest2$income)
+tree_performance2 <- ROCR::performance(tree_prediction2,
+                                      measure = "tpr", x.measure = "tnr")
+
+
+
+#Plot ROC curve 
+plot(tree_performance2, main = "TPR v.s. TNR")
+abline(a = 1, b = -1, lty = 2)
+
+
+
+#==============================================================
+
+
+
+#from bagged tree
+final.thres2.half
+
+
+
+#Getting predicted >50K of income probabilities 
+tunned.bag.rf_prob2 <- predict(final.thres2.half, newdata = newtest2,
+                     type = "prob")[, 2]
+tunned.bag.rf_prediction2 <- prediction(tunned.bag.rf_prob2, newtest2$income)
+tunned.bag.rf_performance2 <- ROCR::performance(tunned.bag.rf_prediction2,
+                                               measure = "tpr",
+                                               x.measure = "tnr")
+
+
+
+#Plot ROC curve 
+plot(tunned.bag.rf_performance2, main = "TPR v.s. TNR")
+abline(a = 1, b = -1, lty = 2)
+
+
+
+#==============================================================
+
+
+
+#from random forest
+final.thres3.half
+
+
+
+#Getting predicted >50K of income probabilities 
+untunned.rf_prob3 <- predict(final.thres3.half, newdata = newtest2, 
+                            type = "prob")[, 2]
+untunned.rf_prediction3 <- prediction(untunned.rf_prob3, newtest2$income)
+untunned.rf_performance3 <- ROCR::performance(untunned.rf_prediction3,
+                                             measure = "tpr", x.measure = "tnr")
+
+
+
+#Plot ROC curve 
+plot(untunned.rf_performance3, main = "TPR v.s. TNR")
+abline(a = 1, b = -1, lty = 2)
+
+
+
+#==============================================================
+
+
+
+#from boosted
+final.thres4
+
+#ROC curve - testing
+pos5b <- c()
+pos5b <- predict(final.thres4, newdata = combined[32403:48598, -44], n.trees = 800,
+                type = "response")
+predicts5b <- prediction(pos5b, combined[32403:48598, 44])
+roc5b <- ROCR::performance(predicts5b, measure = "tpr", x.measure = "tnr")
+plot(roc5b, main = "TPR v.s. TNR")
+abline(a = 1, b = -1, col = "red")
+
+
+
+#Combine into one graph
+plot(tree_performance2, main = "TPR v.s. TNR - Accuracy selection", 
+     col = "blue")
+plot(tunned.bag.rf_performance2, col = "red", add = TRUE)
+plot(untunned.rf_performance3, col = "green", add = TRUE)
+plot(roc5b, add = TRUE)
+abline(a = 1, b = -1, lty = 2)
+legend("bottomleft", legend = c("Classification", "Bagged",
+                                 "Boosted","Random Forest"),
+       col=c("blue", "red", "black", "green"), lwd = 3, cex = .5, horiz = TRUE)
+
+```
+
+
+
+
+
+
+
+
+
+
+

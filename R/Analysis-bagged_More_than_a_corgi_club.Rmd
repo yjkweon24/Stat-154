@@ -1,0 +1,566 @@
+---
+title: "Analysis-bagged (More_than_a_corgi_club)"
+author: "Jin Kweon and Jiyoon Clover Jeong"
+date: "11/29/2017"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rpart) #decision tree
+library(rpart.plot) # plotting decision tree
+library(mlr, warn.conflicts = T) #missing values imputation
+library(missForest, warn.conflicts = T) #missing values imputation
+library(mi, warn.conflicts = T) #missing values imputation
+library(mice, warn.conflicts = T) #missing values imputation
+library(VIM) #finding patterns of missing values
+library(Hmisc) #missing values imputation
+library(lattice)
+library(arules) #discretize
+library(lme4) #dummfiy
+library(tree)
+library(caret)
+library(ROCR, warn.conflicts = T) # ROC curve
+library(pROC, warn.conflicts = T) # Get the optimal threshold
+library(randomForest)
+library(dplyr)
+options(scipen=999) #get rid of scientific notation 
+```
+
+
+
+
+
+
+
+
+
+```{r}
+set.seed(100)
+newtrain2 <- read.csv("../data/cleandata/newtrain2.csv", header = T)
+newtest2 <- read.csv("../data/cleandata/newtest2.csv", header = T)
+str(newtrain2)
+str(newtest2)
+```
+
+$\\$
+
+$\\$
+
+#Bagged Tree - simply a special case of a random forest with m = p.
+
+## Train and tune a Bagged classifier 
+```{r}
+set.seed(100)
+
+
+
+#=============================================================
+
+
+
+#Create a task
+traintask <- makeClassifTask(data = newtrain2, target = "income", positive = ">50K")
+testtask <- makeClassifTask(data = newtest2, target = "income", positive = ">50K")
+
+
+
+#Brief view of trainTask
+traintask
+
+
+
+#For deeper View
+str(getTaskData(traintask))
+
+
+
+#Create a bagging learner
+bagged <- makeLearner("classif.rpart",  parms = list(split = "gini"),
+                      predict.type = "response")
+
+
+
+#Set up the bagging algorithm which will grow 100 trees on randomized samples of data with replacement.
+bag <- makeBaggingWrapper(learner = bagged, bw.iters = 100, bw.replace = TRUE)
+# Q  :  bw.iters [integer(1)] Iterations = number of fitted models in bagging. Default is 10
+
+
+
+#To check the performance, set up a validation strategy
+#set 3 fold cross validation
+rdesc <- makeResampleDesc("CV", iters = 3L)
+
+
+
+# With 100 trees, bagging has returned an accuracy of 84.5%
+r <- resample(learner = bag , task = traintask, resampling = rdesc, 
+              measures = list(tpr, fpr, fnr, tnr, acc), show.info = T)
+
+
+
+#Show true positive rate, false positive rate, false negative rate, false positive rate, and accuracy rate from bagged model
+r
+
+
+
+#Aggr. Result: tpr.test.mean=0.514,fpr.test.mean=0.0554,fnr.test.mean=0.486,tnr.test.mean=0.945,acc.test.mean=0.843
+
+
+
+#=============================================================
+
+
+
+#Make a random bagged learner (mtry = number of variables in dataset)
+bag.rf <- makeLearner("classif.randomForest", predict.type = "response",
+                  par.vals = list(ntree = 50L, mtry = 43, 
+                                  importance = TRUE))
+
+
+
+r2 <- resample(learner = bag.rf, task = traintask, resampling = rdesc, 
+               measures = list(tpr,fpr,fnr,tnr,acc), show.info = TRUE)
+
+
+
+#Show true positive rate, false positive rate, false negative rate, false positive rate, and accuracy rate from random forest model
+r2
+
+
+
+#Aggr perf: tpr.test.mean=0.636,fpr.test.mean=0.0883,fnr.test.mean=0.364,tnr.test.mean=0.912,acc.test.mean=0.846
+
+
+
+#Internally, random forest uses a cutoff of 0.5  --> 
+#if a particular unseen observation has a probability higher than 0.5, it will be classified as >50K.
+#In random forest, we have the option to customize the internal cutoff. As the false negative rate is very high now, we'll increase the cutoff for negative classes (<=50K) and accordingly reduce it for positive classes (>50K). Then, train the model again.
+
+
+
+#Evaluating by using new cutoff
+bag.rf$par.vals <- list(ntree = 50L, mtry = 43, importance = TRUE, cutoff = c(0.55, 0.45))
+r3 <- resample(learner = bag.rf, task = traintask, resampling = rdesc, 
+              measures = list(tpr,fpr,fnr,tnr,acc), show.info = TRUE)
+
+
+
+#Show true positive rate, false positive rate, false negative rate, false positive rate, and accuracy rate from random forest model
+r3
+
+
+
+#Aggr perf: tpr.test.mean=0.636,fpr.test.mean=0.0646,fnr.test.mean=0.364,tnr.test.mean=0.935,acc.test.mean=0.864   ---> we can see that false negative rate is decreased even though the accuracy rate stays the same. I have tried cutoff = c(0.6, 0.4), cutoff = c(0.7, 0.3) but they all gave lower accuracy late.
+
+
+
+#========================================================================
+
+
+
+#Let's see how the test classification error changes as we increase the number of trees for untunned model  ( #number of trees VS test classification error)
+
+
+#Train a old untunned model
+untunnedbagged <- mlr::train(bag.rf, traintask)
+
+bag.untunned_ind <- predict(untunnedbagged$learner.model, newtrain2, 
+                    predict.all = T)$individual
+head(bag.untunned_ind, 2)
+n <- dim(bag.untunned_ind)[1]
+m <- ceiling(dim(bag.untunned_ind)[2] / 2)
+predicted_ind <- c()
+misclass.ind <- c()
+
+for(i in 1:m){   # number of tree
+  for(j in 1:n){
+    predicted_ind[j] <- names(which.max(table(bag.untunned_ind[j, 1:i*2-1])))
+  }
+  misclass.ind[i] <- mean(predicted_ind != newtrain2$income)
+}
+
+bag.untunned.df <- data.frame(misclass.ind, ntree = seq(1, 50, 2))
+
+ggplot(bag.untunned.df, aes(x = ntree, y = misclass.ind)) + geom_line() +
+  ggtitle("Number of trees vs Misclassification rate in training dataset - untunned bagged model")
+
+
+
+#======================== Let's actually tune the hyperparameters
+
+
+
+#Bagged tree tuning
+getParamSet(bag.rf)
+
+
+
+#Specifying the search space for hyperparameters
+bag.rf_params <- makeParamSet(makeIntegerParam("nodesize", 
+                                           lower = 10, upper = 50),
+                          makeIntegerParam("ntree", lower = 3, upper = 100))
+
+
+
+#Set validation strategy
+rdesc <- makeResampleDesc("CV", iters = 3L)
+
+
+
+#Set optimization technique
+bag.rf_ctrl <- makeTuneControlRandom(maxit = 5L)
+
+
+
+#Start Hypertuning the parameters
+bag.rf_tune <- tuneParams(learner = bag.rf, task = traintask, 
+                          resampling = rdesc,
+                   measures = list(acc), par.set = bag.rf_params,
+                   control = bag.rf_ctrl, show.info = TRUE)
+
+
+
+#Optimal hypertuned parameters
+bag.rf_tune$x
+
+
+
+#Accuracy rate from Cross Validation
+bag.rf_tune$y
+
+
+
+#Use hyperparameters for modeling
+bag.rf_tree <- setHyperPars(bag.rf, par.vals = bag.rf_tune$x)
+
+
+
+#Train a model
+bag.rforest <- mlr::train(bag.rf_tree, traintask)
+getLearnerModel(bag.rforest)
+
+
+
+#***Make plots for random forest model
+
+
+
+#========================================================================
+
+
+
+#Let's see how the test classification error changes as we increase the number of trees for tunned model  ( #number of trees VS test classification error)
+bag.tunned_ind <- predict(bag.rforest$learner.model, newtrain2, 
+                    predict.all = T)$individual
+head(bag.tunned_ind, 2)
+n <- dim(bag.tunned_ind)[1]
+m <- ceiling(dim(bag.tunned_ind)[2] / 2)
+predicted_ind <- c()
+misclass.ind <- c()
+
+for(i in 1:m){   # number of tree
+  for(j in 1:n){
+    predicted_ind[j] <- names(which.max(table(bag.tunned_ind[j, 1:i*2-1])))
+  }
+  misclass.ind[i] <- mean(predicted_ind != newtrain2$income)
+}
+
+bag.tunned.df <- data.frame(misclass.ind, ntree = seq(1, 68, 2))
+
+ggplot(bag.tunned.df, aes(x = ntree, y = misclass.ind)) + geom_line() +
+  ggtitle("Number of trees vs Misclassification rate in training dataset - tunned bagged model")
+
+
+
+#Variable importance statistics
+varImpPlot(bag.rforest$learner.model)
+importance(bag.rforest$learner.model)
+```
+
+$\\$
+
+$\\$
+
+```{r}
+set.seed(100)
+# ** Plot bagged tree
+
+
+
+# ** Make predictions on training dataset
+bag.rfclass1 <- predict(bag.rforest, traintask)
+
+
+
+#Confusion matrix on training dataset
+confusionMatrix(bag.rfclass1$data$response, bag.rfclass1$data$truth)
+
+
+
+#Make random forest plots on training dataset
+plot(bag.rfclass1$data$response, newtrain2$income)
+abline(0, 1)
+
+
+
+#Training accuracy rate
+1 - mean(bag.rfclass1$data$response != newtrain2$income)
+
+
+
+#Make predictions on test dataset
+bag.rfclass2 <- predict(bag.rforest, testtask)
+
+
+
+#Confusion matrix on test dataset
+confusionMatrix(bag.rfclass2$data$response, bag.rfclass2$data$truth)
+
+
+
+#Make random forest plots on test dataset
+plot(bag.rfclass2$data$response, newtest2$income)
+abline(0, 1)
+
+
+
+#Test accuracy rate
+1 - mean(bag.rfclass2$data$response != newtest2$income)
+```
+
+$\\$
+
+$\\$
+
+#ROC and AUC
+```{r}
+set.seed(100)
+#ROC Curve: https://stackoverflow.com/questions/30818188/roc-curve-in-r-using-rpart-package
+#Untunned bagged tree model
+#Getting predicted >50K of income probabilities 
+untunned.bag.rf <- mlr::train(bag.rf, traintask)
+untunned.bag.rf_prob <- predict(untunned.bag.rf$learner.model,
+                            newdata = newtest2, type = "prob")[, 2]
+untunned.bag.rf_prediction <- prediction(untunned.bag.rf_prob,
+                                         newtest2$income)
+untunned.bag.rf_performance <- ROCR::performance(untunned.bag.rf_prediction,
+                                                 measure = "tpr", 
+                                                 x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(untunned.bag.rf_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+untunned.bag.rf.auc <- ROCR::performance(untunned.bag.rf_prediction,
+                                     measure = "auc")@y.values[[1]]
+untunned.bag.rf.auc
+
+
+
+#=====================================================================
+
+
+
+#Tunned bagged tree model
+#Getting predicted >50K of income probabilities 
+tunned.bag.rf_prob <- predict(bag.rforest$learner.model, newdata = newtest2,
+                     type = "prob")[, 2]
+tunned.bag.rf_prediction <- prediction(tunned.bag.rf_prob, newtest2$income)
+tunned.bag.rf_performance <- ROCR::performance(tunned.bag.rf_prediction,
+                                               measure = "tpr",
+                                               x.measure = "fpr")
+
+
+
+#Plot ROC curve 
+plot(tunned.bag.rf_performance, main = "ROC curve")
+abline(a = 0, b = 1, lty = 2)
+
+
+
+#Calculate AUC
+tunned.bag.rf.auc <- ROCR::performance(tunned.bag.rf_prediction,
+                                   measure = "auc")@y.values[[1]]
+tunned.bag.rf.auc
+```
+
+$\\$
+
+$\\$
+
+#Compare ROC and AUC from three different tuned tree
+```{r}
+set.seed(100)
+#Compare ROC curve 
+plot(tunned.bag.rf_performance, main = "ROC curve", col = "blue")
+plot(untunned.bag.rf_performance, add = TRUE, col = "red")
+abline(a = 0, b = 1, lty = 2)
+legend("bottomright", legend = c("Tunned", "Untunned"), col = c("blue", "red"), lwd=3,
+       cex=.8, horiz = TRUE)
+
+
+
+#Compare AUC
+auc <- data.frame(tunned.bag.rf.auc, untunned.bag.rf.auc)
+auc[, order(auc)]
+
+
+
+#Pick the model with the largest AUC --> tunned bagged tree
+final.auc2 <- bag.rforest$learner.model
+```
+
+$\\$
+
+$\\$
+
+#Pick the best threshold for each model which leads best accuracy
+```{r}
+set.seed(100)
+thresholds <- seq(from = 0.001, 0.999, 0.001)
+accuracy <- c()
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by  new threshold
+untunned.bag.rf_prob.train <- predict(untunned.bag.rf$learner.model,
+                            newdata = newtrain2, type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((untunned.bag.rf_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres1 <- which.max(accuracy) * 0.001
+thres1
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get confusion matrix of testset data using the optimal threshold
+confusionMatrix(untunned.bag.rf_prob > thres1, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+untunned.bagged.accuracy <- mean((untunned.bag.rf_prob > thres1) == (newtest2$income == ">50K"))
+
+
+
+#compare the test accuracy by using default threshold (0.5)
+thres.untunned.bag.half <- mean((untunned.bag.rf_prob > 0.5) == (newtest2$income == ">50K")) 
+
+
+
+#==================================================================
+
+
+
+#Using train dataset to check new accuracy driven by  new threshold
+tunned.bag.rf_prob.train <- predict(bag.rforest$learner.model,
+                            newdata = newtrain2, type = "prob")[, 2]
+
+
+
+#Tuned by gini index splitting criterion model
+for(i in 1:length(thresholds)){
+  accuracy[i] <- mean((tunned.bag.rf_prob.train > thresholds[i]) ==
+                        (newtrain2$income == ">50K"))
+}
+
+
+
+#Threshold which give maximum accuracy
+thres2 <- which.max(accuracy) * 0.001
+thres2
+
+
+
+#plot of accuracy vs thresholds
+threstable <- data.frame(thresholds, accuracy)
+ggplot(threstable, aes(x = thresholds, y = accuracy)) + geom_point()
+  
+
+
+#Get confusion matrix of testset data using the optimal threshold
+confusionMatrix(tunned.bag.rf_prob > thres2, newtest2$income == ">50K")
+
+
+
+#Test accuracy rate by using optimal threshold
+tunned.bagged.accuracy <- mean((tunned.bag.rf_prob > thres2) == (newtest2$income == ">50K"))
+
+
+
+#compare the test accuracy by using default threshold (0.5)
+thres.tunned.bag.half <- mean((tunned.bag.rf_prob > 0.5) == (newtest2$income == ">50K"))
+```
+
+$\\$
+
+$\\$
+
+#Compare Accuracy & AUC
+```{r}
+set.seed(100)
+
+
+
+#Compare AUC
+auc <- data.frame(tunned.bag.rf.auc, untunned.bag.rf.auc)
+auc[, order(auc)]
+
+
+
+#Pick the model with the largest AUC --> tunned bagged tree
+final.auc2 <- bag.rforest$learner.model
+
+
+
+#Compare Accuracy - optimal threshold
+accuracy.bag.df <- data.frame(tunned.bagged.accuracy,
+                              untunned.bagged.accuracy)
+accuracy.bag.df[, order(accuracy.bag.df)]
+
+
+
+#Pick the model with the highest Accuracy  - tunned.bag.rf.auc
+final.thres2 <- bag.rforest$learner.model
+
+
+
+#Compare Accuracy - 0.5 threshold
+accuracy.bag.df.half <- data.frame(thres.untunned.bag.half,
+                              thres.tunned.bag.half)
+accuracy.bag.df.half[, order(accuracy.bag.df.half)]
+
+
+#Pick the model with the highest Accuracy  - tunned.bag.rf.auc
+final.thres2.half <- bag.rforest$learner.model
+```
+
+
+
+
